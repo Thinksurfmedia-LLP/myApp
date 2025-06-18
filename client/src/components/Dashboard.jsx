@@ -146,6 +146,11 @@ const Dashboard = ({ user, onLogout }) => {
   const [minimumMakingCharge, setMinimumMakingCharge] = useState("");
   const [isMinChargeLoading, setIsMinChargeLoading] = useState(false);
 
+  const [selectedMakingChargeIds, setSelectedMakingChargeIds] = useState([]);
+  const [selectAllMakingCharges, setSelectAllMakingCharges] = useState(false);
+  const [isBulkDeletingMakingCharges, setIsBulkDeletingMakingCharges] =
+    useState(false);
+
   useEffect(() => {
     fetchMetalPrices();
   }, []);
@@ -1395,6 +1400,64 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
+  const bulkDeleteMakingCharges = async () => {
+    if (selectedMakingChargeIds.length === 0) {
+      alert("Please select at least one entry to delete");
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Are you sure you want to delete ${selectedMakingChargeIds.length} selected entries?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setIsBulkDeletingMakingCharges(true);
+      const token = localStorage.getItem("token");
+      const response = await axios.delete(
+        "http://localhost:5000/api/making-charges/bulk-delete",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          data: { ids: selectedMakingChargeIds },
+        }
+      );
+      if (response.data.success) {
+        // Refresh list after deletion
+        await fetchMakingCharges();
+        setSelectedMakingChargeIds([]);
+        setSelectAllMakingCharges(false);
+        alert(`${response.data.deletedCount} entries deleted successfully!`);
+      }
+    } catch (error) {
+      console.error("Error bulk deleting making charges:", error);
+      alert("Failed to delete selected entries. Please try again.");
+    } finally {
+      setIsBulkDeletingMakingCharges(false);
+    }
+  };
+
+  const handleMakingChargeSelection = (id) => {
+    setSelectedMakingChargeIds((prev) => {
+      if (prev.includes(id)) {
+        return prev.filter((selectedId) => selectedId !== id);
+      } else {
+        return [...prev, id];
+      }
+    });
+  };
+
+  const handleSelectAllMakingCharges = () => {
+    if (selectAllMakingCharges) {
+      setSelectedMakingChargeIds([]);
+    } else {
+      setSelectedMakingChargeIds(makingCharges.map((item) => item._id));
+    }
+    setSelectAllMakingCharges(!selectAllMakingCharges);
+  };
+
   // Rendering the main dashboard content
 
   const renderProductsContent = () => (
@@ -2611,6 +2674,20 @@ const Dashboard = ({ user, onLogout }) => {
     <div className="space-y-6">
       {/* Add New Making Charge Form */}
       <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 p-6">
+        {/* Bulk actions and selection summary */}
+        {selectedMakingChargeIds.length > 0 && (
+          <div className="mb-4 flex items-center justify-between bg-blue-50 border border-blue-200 rounded p-3 text-blue-700 text-sm">
+            <span>{selectedMakingChargeIds.length} entries selected</span>
+            <button
+              onClick={bulkDeleteMakingCharges}
+              disabled={isBulkDeletingMakingCharges}
+              className="px-3 py-1 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white rounded transition-colors"
+            >
+              {isBulkDeletingMakingCharges ? "Deleting..." : "Delete Selected"}
+            </button>
+          </div>
+        )}
+
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
           Making Charges Management
         </h3>
@@ -2715,6 +2792,15 @@ const Dashboard = ({ user, onLogout }) => {
             <table className="w-full rounded-lg border border-gray-200 shadow-sm">
               <thead className="bg-gray-50">
                 <tr>
+                  <th className="px-4 py-3 text-left">
+                    <input
+                      type="checkbox"
+                      checked={selectAllMakingCharges}
+                      onChange={handleSelectAllMakingCharges}
+                      className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      aria-label="Select all making charges"
+                    />
+                  </th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
                     Purity
                   </th>

@@ -307,7 +307,6 @@ const MakingChargesSchema = new mongoose.Schema(
 
 const MakingCharges = mongoose.model("MakingCharges", MakingChargesSchema);
 
-
 const SettingsSchema = new mongoose.Schema(
   {
     minimumMakingCharge: {
@@ -1848,66 +1847,75 @@ app.delete("/api/making-charges/:id", authenticateToken, async (req, res) => {
   }
 });
 
-
-
 // Route to get minimum making charge
-app.get("/api/settings/minimum-making-charge", authenticateToken, async (req, res) => {
-  try {
-    let settings = await Settings.findOne();
-    if (!settings) {
-      // Create default settings if none exist
-      settings = new Settings({ minimumMakingCharge: 0 });
-      await settings.save();
-    }
-    res.json({
-      success: true,
-      minimumMakingCharge: settings.minimumMakingCharge,
-    });
-  } catch (error) {
-    console.error("Error fetching minimum making charge:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch minimum making charge",
-      error: error.message,
-    });
-  }
-});
-
-// Route to update minimum making charge
-app.put("/api/settings/minimum-making-charge", authenticateToken, async (req, res) => {
-  try {
-    const { minimumMakingCharge } = req.body;
-    if (minimumMakingCharge === undefined || minimumMakingCharge === null || isNaN(minimumMakingCharge) || minimumMakingCharge < 0) {
-      return res.status(400).json({
+app.get(
+  "/api/settings/minimum-making-charge",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      let settings = await Settings.findOne();
+      if (!settings) {
+        // Create default settings if none exist
+        settings = new Settings({ minimumMakingCharge: 0 });
+        await settings.save();
+      }
+      res.json({
+        success: true,
+        minimumMakingCharge: settings.minimumMakingCharge,
+      });
+    } catch (error) {
+      console.error("Error fetching minimum making charge:", error);
+      res.status(500).json({
         success: false,
-        message: "Invalid minimum making charge",
+        message: "Failed to fetch minimum making charge",
+        error: error.message,
       });
     }
-
-    let settings = await Settings.findOne();
-    if (!settings) {
-      settings = new Settings({ minimumMakingCharge });
-    } else {
-      settings.minimumMakingCharge = minimumMakingCharge;
-    }
-    await settings.save();
-
-    res.json({
-      success: true,
-      message: "Minimum making charge updated successfully",
-      minimumMakingCharge: settings.minimumMakingCharge,
-    });
-  } catch (error) {
-    console.error("Error updating minimum making charge:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to update minimum making charge",
-      error: error.message,
-    });
   }
-});
+);
 
+// Route to update minimum making charge
+app.put(
+  "/api/settings/minimum-making-charge",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { minimumMakingCharge } = req.body;
+      if (
+        minimumMakingCharge === undefined ||
+        minimumMakingCharge === null ||
+        isNaN(minimumMakingCharge) ||
+        minimumMakingCharge < 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid minimum making charge",
+        });
+      }
 
+      let settings = await Settings.findOne();
+      if (!settings) {
+        settings = new Settings({ minimumMakingCharge });
+      } else {
+        settings.minimumMakingCharge = minimumMakingCharge;
+      }
+      await settings.save();
+
+      res.json({
+        success: true,
+        message: "Minimum making charge updated successfully",
+        minimumMakingCharge: settings.minimumMakingCharge,
+      });
+    } catch (error) {
+      console.error("Error updating minimum making charge:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to update minimum making charge",
+        error: error.message,
+      });
+    }
+  }
+);
 
 mongoose
   .connect(process.env.MONGODB_URI)
