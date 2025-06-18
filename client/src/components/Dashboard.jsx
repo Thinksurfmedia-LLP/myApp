@@ -1,7 +1,64 @@
-import React, { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Edit, LogOut, Upload, X } from "lucide-react";
 import axios from "axios";
 
+const AccordionSection = ({
+  id,
+  title,
+  isOpen,
+  onToggle,
+  children,
+  icon,
+  color = "blue",
+}) => (
+  <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 overflow-hidden">
+    <button
+      onClick={() => onToggle(id)}
+      className={`w-full px-6 py-4 text-left flex items-center justify-between hover:bg-gray-50/50 transition-colors border-l-4 border-${color}-500`}
+    >
+      <div className="flex items-center space-x-3">
+        <div
+          className={`w-10 h-10 rounded-lg bg-gradient-to-r from-${color}-500 to-${color}-600 flex items-center justify-center text-white font-bold text-lg`}
+        >
+          {icon}
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+          <p className="text-sm text-gray-600">
+            {isOpen ? "Click to collapse" : "Click to expand"}
+          </p>
+        </div>
+      </div>
+      <div
+        className={`transform transition-transform duration-200 ${
+          isOpen ? "rotate-180" : ""
+        }`}
+      >
+        <svg
+          className="w-5 h-5 text-gray-500"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M19 9l-7 7-7-7"
+          />
+        </svg>
+      </div>
+    </button>
+
+    <div
+      className={`overflow-hidden transition-all duration-300 ${
+        isOpen ? "max-h-screen opacity-100" : "max-h-0 opacity-0"
+      }`}
+    >
+      <div className="px-6 pb-6">{children}</div>
+    </div>
+  </div>
+);
 const Dashboard = ({ user, onLogout }) => {
   const [logoUrl, setLogoUrl] = useState(
     "https://www.shutterstock.com/image-vector/vector-icon-demo-600nw-1148418773.jpg"
@@ -84,23 +141,6 @@ const Dashboard = ({ user, onLogout }) => {
 
   // Fetch diamond prices on component mount
   useEffect(() => {
-    const fetchDiamondPrices = async () => {
-      try {
-        const response = await axios.get(
-          "http://localhost:5000/api/diamond-prices"
-        );
-        if (response.data.success) {
-          setDiamondPrices(response.data.diamondPrices);
-        }
-      } catch (error) {
-        console.error("Error fetching diamond prices:", error);
-      }
-    };
-
-    fetchDiamondPrices();
-  }, []);
-
-  useEffect(() => {
     fetchDiamondPrices();
   }, []);
 
@@ -119,19 +159,19 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
-  const handleNewDiamondPriceChange = (field, value) => {
+  const handleNewDiamondPriceChange = useCallback((field, value) => {
     setNewDiamondPrice((prev) => ({
       ...prev,
       [field]: value,
     }));
-  };
+  }, []);
 
-  const handleEditDiamondPriceChange = (field, value) => {
+  const handleEditDiamondPriceChange = useCallback((field, value) => {
     setEditingDiamond((prev) => ({
       ...prev,
       [field]: value,
     }));
-  };
+  }, []);
 
   const addDiamondPrice = async () => {
     if (
@@ -283,12 +323,12 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
-  const handlePriceChange = (metal, value) => {
+  const handlePriceChange = useCallback((metal, value) => {
     setMetalPrices((prev) => ({
       ...prev,
       [metal]: parseFloat(value) || 0,
     }));
-  };
+  }, []);
 
   // In your savePrices function, after successful save:
   const savePrices = async () => {
@@ -446,98 +486,9 @@ const Dashboard = ({ user, onLogout }) => {
     fileInputRef.current?.click();
   };
 
-  // Handle input changes for new diamond price
-  const handleDiamondPriceChange = (e) => {
-    const { name, value } = e.target;
-    setNewDiamondPrice((prev) => ({
-      ...prev,
-      [name]: name === "price" ? parseFloat(value) : value,
-    }));
-  };
-
-  // Save new diamond price
-  const saveDiamondPrice = async () => {
-    try {
-      const response = await axios.put(
-        "http://localhost:5000/api/diamond-prices",
-        newDiamondPrice
-      );
-      if (response.data.success) {
-        alert("Diamond price added successfully!");
-        setDiamondPrices((prev) => [...prev, response.data.diamondPrice]);
-        setNewDiamondPrice({
-          shape: "Round",
-          weightRange: { min: 0, max: 0 },
-          price: 0,
-        });
-      }
-    } catch (error) {
-      console.error("Error saving diamond price:", error);
-      alert("Error saving diamond price. Please try again.");
-    }
-  };
-
   const toggleAccordion = (section) => {
     setActiveAccordion(activeAccordion === section ? null : section);
   };
-
-  const AccordionSection = ({
-    id,
-    title,
-    isOpen,
-    onToggle,
-    children,
-    icon,
-    color = "blue",
-  }) => (
-    <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 overflow-hidden">
-      <button
-        onClick={() => onToggle(id)}
-        className={`w-full px-6 py-4 text-left flex items-center justify-between hover:bg-gray-50/50 transition-colors border-l-4 border-${color}-500`}
-      >
-        <div className="flex items-center space-x-3">
-          <div
-            className={`w-10 h-10 rounded-lg bg-gradient-to-r from-${color}-500 to-${color}-600 flex items-center justify-center text-white font-bold text-lg`}
-          >
-            {icon}
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-            <p className="text-sm text-gray-600">
-              {isOpen ? "Click to collapse" : "Click to expand"}
-            </p>
-          </div>
-        </div>
-        <div
-          className={`transform transition-transform duration-200 ${
-            isOpen ? "rotate-180" : ""
-          }`}
-        >
-          <svg
-            className="w-5 h-5 text-gray-500"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M19 9l-7 7-7-7"
-            />
-          </svg>
-        </div>
-      </button>
-
-      <div
-        className={`overflow-hidden transition-all duration-300 ${
-          isOpen ? "max-h-screen opacity-100" : "max-h-0 opacity-0"
-        }`}
-      >
-        <div className="px-6 pb-6">{children}</div>
-      </div>
-    </div>
-  );
 
   const renderProductsContent = () => (
     <div className="space-y-6">
