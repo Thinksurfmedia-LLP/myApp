@@ -3,6 +3,7 @@ import express from "express";
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import axios from "axios";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
@@ -28,6 +29,13 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// GoldAPI configuration
+const GOLDAPI_CONFIG = {
+  baseURL: 'https://www.goldapi.io/api',
+  apiKey: process.env.GOLDAPI_KEY, // Add your API key to .env file
+  currency: 'INR'
+};
 
 // User Schema
 const userSchema = new mongoose.Schema(
@@ -191,6 +199,43 @@ const DiamondPricesSchema = new mongoose.Schema(
 
 const DiamondPrices = mongoose.model("DiamondPrices", DiamondPricesSchema);
 
+// Stone Prices Schema
+const StonePricesSchema = new mongoose.Schema(
+  {
+    stoneType: {
+      type: String,
+      enum: ["Gemstone", "Moissanite"],
+      required: true,
+    },
+    weightFrom: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    weightTo: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    rate: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false,
+      default: null,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+const StonePrices = mongoose.model("StonePrices", StonePricesSchema);
+
 // Validation middleware
 const validateInput = (req, res, next) => {
   const { email, password, name } = req.body;
@@ -297,6 +342,27 @@ const upload = multer({
     }
   },
 });
+
+
+// Helper function to convert troy ounce to grams and calculate different karat prices
+const convertPrices = (goldPricePerOunce, silverPricePerOunce) => {
+  // 1 troy ounce = 31.1035 grams
+  const TROY_OUNCE_TO_GRAMS = 31.1035;
+  
+  // Convert from per ounce to per gram
+  const gold24KPerGram = goldPricePerOunce / TROY_OUNCE_TO_GRAMS;
+  const silverPerGram = silverPricePerOunce / TROY_OUNCE_TO_GRAMS;
+  
+  // Calculate different karat prices based on gold content
+  // 24K = 100% gold, 22K = 91.7% gold, 18K = 75% gold, 14K = 58.3% gold
+  return {
+    gold24K: Math.round(gold24KPerGram * 100) / 100,
+    gold22K: Math.round(gold24KPerGram * 0.917 * 100) / 100,
+    gold18K: Math.round(gold24KPerGram * 0.75 * 100) / 100,
+    gold14K: Math.round(gold24KPerGram * 0.583 * 100) / 100,
+    silver: Math.round(silverPerGram * 100) / 100
+  };
+};
 
 // Routes
 
@@ -512,6 +578,7 @@ app.get("/api/logo", async (req, res) => {
 // METAL PRICES ROUTES
 
 // Get current metal prices
+
 app.get("/api/metal-prices", async (req, res) => {
   try {
     let metalPrices = await MetalPrices.findOne()
@@ -651,6 +718,159 @@ app.get("/api/metal-prices/history", authenticateToken, async (req, res) => {
     });
   }
 });
+
+// Live metal prices route
+
+// Endpoint to fetch live prices from GoldAPI.io
+app.get('/api/metal-prices/live', async (req, res) => {
+  try {
+    // Check if API key is configured
+    if (!GOLDAPI_CONFIG.apiKey) {
+      return res.status(500).json({
+        success: false,
+        message: 'GoldAPI key not configured. Please add GOLDAPI_KEY to environment variables.'
+      });
+    }
+
+    // Fetch both gold and silver prices
+    const [goldResponse, silverResponse] = await Promise.all([
+      axios.get(`${GOLDAPI_CONFIG.baseURL}/XAU/${GOLDAPI_CONFIG.currency}`, {
+        headers: {
+          'x-access-token': GOLDAPI_CONFIG.apiKey
+        }
+      }),
+      axios.get(`${GOLDAPI_CONFIG.baseURL}/XAG/${GOLDAPI_CONFIG.currency}`, {
+        headers: {
+          'x-access-token': GOLDAPI_CONFIG.apiKey
+        }
+      })
+    ]);
+
+    // Extract prices from API response
+    const goldPricePerOunce = goldResponse.data.price;
+    const silverPricePerOunce = silverResponse.data.price;
+
+    // Convert and calculate different karat prices
+    const convertedPrices = convertPrices(goldPricePerOunce, silverPricePerOunce);
+
+    // Fix: Handle timestamp properly
+    let lastUpdated;
+    if (goldResponse.data.timestamp) {
+      // If timestamp is in seconds, convert to milliseconds
+      const timestamp = goldResponse.data.timestamp;
+      lastUpdated = timestamp < 10000000000 ? timestamp * 1000 : timestamp;
+    } else {
+      // Use current time if no timestamp from API
+      lastUpdated = Date.now();
+    }
+    // Debug: Log the timestamp processing
+    console.log("Original timestamp:", goldResponse.data.timestamp);
+    console.log("Processed timestamp:", lastUpdated);
+    console.log("Date from processed timestamp:", new Date(lastUpdated));
+
+    res.json({
+      success: true,
+      livePrices: convertedPrices,
+      lastUpdated: new Date(lastUpdated).toISOString(), // Convert to ISO string
+      source: 'GoldAPI.io',
+      originalData: {
+        goldPerOunce: goldPricePerOunce,
+        silverPerOunce: silverPricePerOunce,
+        currency: GOLDAPI_CONFIG.currency,
+        rawTimestamp: goldResponse.data.timestamp
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching live metal prices:', error);
+    
+    // Handle different types of errors
+    let errorMessage = 'Failed to fetch live metal prices';
+    let statusCode = 500;
+
+    if (error.response) {
+      // API responded with error status
+      statusCode = error.response.status;
+      if (error.response.status === 401) {
+        errorMessage = 'Invalid API key. Please check your GoldAPI credentials.';
+      } else if (error.response.status === 429) {
+        errorMessage = 'API rate limit exceeded. Please try again later.';
+      } else {
+        errorMessage = error.response.data?.message || 'API request failed';
+      }
+    } else if (error.request) {
+      // Network error
+      errorMessage = 'Network error. Please check your internet connection.';
+    }
+
+    res.status(statusCode).json({
+      success: false,
+      message: errorMessage,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+
+// Sync endpoint to update database with live prices
+app.post('/api/metal-prices/sync-live', authenticateToken, async (req, res) => {
+  try {
+    // First fetch live prices
+    const liveResponse = await axios.get(`${req.protocol}://${req.get('host')}/api/metal-prices/live`);
+    
+    if (!liveResponse.data.success) {
+      return res.status(400).json({
+        success: false,
+        message: 'Failed to fetch live prices for sync'
+      });
+    }
+
+    const livePrices = liveResponse.data.livePrices;
+
+    // Update database with live prices
+    const updateData = {
+      gold24K: livePrices.gold24K,
+      gold22K: livePrices.gold22K,
+      gold18K: livePrices.gold18K,
+      gold14K: livePrices.gold14K,
+      silver: livePrices.silver,
+      // Keep existing platinum and palladium values or set defaults
+      platinum: 3200,
+      palladium: 2800,
+      updatedBy: req.user._id,
+      isDefault: false,
+    };
+
+    const metalPrices = await MetalPrices.findOneAndUpdate(
+      {}, // Find any document (there should only be one)
+      updateData,
+      {
+        new: true, // Return the updated document
+        upsert: true, // Create if doesn't exist
+        runValidators: true, // Run schema validations
+      }
+    ).populate("updatedBy", "name email");
+
+    res.json({
+      success: true,
+      message: 'Prices synced successfully from live market data',
+      metalPrices: metalPrices,
+      syncedFrom: 'GoldAPI.io',
+      syncedAt: new Date().toISOString(),
+      livePrices: livePrices
+    });
+
+  } catch (error) {
+    console.error('Error syncing live metal prices:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to sync live metal prices',
+      error: error.message
+    });
+  }
+});
+
+
 
 // DIAMOND PRICES ROUTES - Add these after your metal prices routes
 
@@ -808,6 +1028,167 @@ app.delete("/api/diamond-prices/:id", authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to delete diamond price",
+      error: error.message,
+    });
+  }
+});
+
+// STONE PRICES ROUTES
+
+// Get current stone prices
+app.get("/api/stone-prices", async (req, res) => {
+  try {
+    const stonePrices = await StonePrices.find()
+      .sort({ createdAt: -1 })
+      .populate("updatedBy", "name email");
+
+    res.json({
+      success: true,
+      stonePrices,
+    });
+  } catch (error) {
+    console.error("Error fetching stone prices:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch stone prices",
+      error: error.message,
+    });
+  }
+});
+
+// Add new stone price entry
+app.post("/api/stone-prices", authenticateToken, async (req, res) => {
+  try {
+    const { stoneType, weightFrom, weightTo, rate } = req.body;
+
+    // Validation
+    if (!stoneType || !weightFrom || !weightTo || !rate) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required.",
+      });
+    }
+
+    if (parseFloat(weightFrom) >= parseFloat(weightTo)) {
+      return res.status(400).json({
+        success: false,
+        message: "Weight 'From' must be less than weight 'To'.",
+      });
+    }
+
+    if (parseFloat(rate) <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Rate must be greater than 0.",
+      });
+    }
+
+    const stonePrice = new StonePrices({
+      stoneType,
+      weightFrom: parseFloat(weightFrom),
+      weightTo: parseFloat(weightTo),
+      rate: parseFloat(rate),
+      updatedBy: req.user._id,
+    });
+
+    await stonePrice.save();
+
+    res.json({
+      success: true,
+      message: "Stone price added successfully",
+      stonePrice: await stonePrice.populate("updatedBy", "name email"),
+    });
+  } catch (error) {
+    console.error("Error adding stone price:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to add stone price",
+      error: error.message,
+    });
+  }
+});
+
+// Update stone price entry
+app.put("/api/stone-prices/:id", authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { stoneType, weightFrom, weightTo, rate } = req.body;
+
+    // Validation
+    if (!stoneType || !weightFrom || !weightTo || !rate) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required.",
+      });
+    }
+
+    if (parseFloat(weightFrom) >= parseFloat(weightTo)) {
+      return res.status(400).json({
+        success: false,
+        message: "Weight 'From' must be less than weight 'To'.",
+      });
+    }
+
+    const updatedStonePrice = await StonePrices.findByIdAndUpdate(
+      id,
+      {
+        stoneType,
+        weightFrom: parseFloat(weightFrom),
+        weightTo: parseFloat(weightTo),
+        rate: parseFloat(rate),
+        updatedBy: req.user._id,
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    ).populate("updatedBy", "name email");
+
+    if (!updatedStonePrice) {
+      return res.status(404).json({
+        success: false,
+        message: "Stone price entry not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Stone price updated successfully",
+      stonePrice: updatedStonePrice,
+    });
+  } catch (error) {
+    console.error("Error updating stone price:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update stone price",
+      error: error.message,
+    });
+  }
+});
+
+// Delete stone price entry
+app.delete("/api/stone-prices/:id", authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const deletedStonePrice = await StonePrices.findByIdAndDelete(id);
+
+    if (!deletedStonePrice) {
+      return res.status(404).json({
+        success: false,
+        message: "Stone price entry not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Stone price deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting stone price:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete stone price",
       error: error.message,
     });
   }

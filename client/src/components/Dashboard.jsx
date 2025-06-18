@@ -59,6 +59,7 @@ const AccordionSection = ({
     </div>
   </div>
 );
+
 const Dashboard = ({ user, onLogout }) => {
   const [logoUrl, setLogoUrl] = useState(
     "https://www.shutterstock.com/image-vector/vector-icon-demo-600nw-1148418773.jpg"
@@ -76,13 +77,7 @@ const Dashboard = ({ user, onLogout }) => {
     gold14K: 0,
     silver: 0,
   });
-  const [livePrices, setLivePrices] = useState({
-    gold24K: 6847,
-    gold22K: 6280,
-    gold18K: 5135,
-    gold14K: 3995,
-    silver: 84.5,
-  });
+
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -103,7 +98,27 @@ const Dashboard = ({ user, onLogout }) => {
   const [editingDiamond, setEditingDiamond] = useState(null);
   const [isDiamondLoading, setIsDiamondLoading] = useState(false);
 
-  // Add this useEffect to fetch metal prices when component mounts
+  const [stonePrices, setStonePrices] = useState([]);
+  const [newStonePrice, setNewStonePrice] = useState({
+    stoneType: "Gemstone",
+    weightFrom: "",
+    weightTo: "",
+    rate: "",
+  });
+  const [editingStone, setEditingStone] = useState(null);
+  const [isStoneLoading, setIsStoneLoading] = useState(false);
+
+  const [livePrices, setLivePrices] = useState({});
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [isFetchingLive, setIsFetchingLive] = useState(false);
+  const [liveDataSource, setLiveDataSource] = useState("");
+
+  const STORAGE_KEYS = {
+    LIVE_PRICES: "livePrices",
+    LAST_UPDATED: "lastUpdated",
+    LIVE_DATA_SOURCE: "liveDataSource",
+  };
+
   useEffect(() => {
     fetchMetalPrices();
   }, []);
@@ -139,12 +154,18 @@ const Dashboard = ({ user, onLogout }) => {
     fetchLastUpdate();
   }, []);
 
-  // Fetch diamond prices on component mount
   useEffect(() => {
     fetchDiamondPrices();
   }, []);
 
-  // Add these functions after your existing functions
+  useEffect(() => {
+    fetchStonePrices();
+  }, []);
+
+  useEffect(() => {
+    // Load live prices from localStorage on component mount
+    loadLivePricesFromStorage();
+  }, []);
 
   const fetchDiamondPrices = async () => {
     try {
@@ -307,6 +328,56 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
+  const loadLivePricesFromStorage = () => {
+    try {
+      const savedPrices = localStorage.getItem(STORAGE_KEYS.LIVE_PRICES);
+      const savedTimestamp = localStorage.getItem(STORAGE_KEYS.LAST_UPDATED);
+      const savedSource = localStorage.getItem(STORAGE_KEYS.LIVE_DATA_SOURCE);
+
+      if (savedPrices) {
+        const parsedPrices = JSON.parse(savedPrices);
+
+        // Validate that prices object has expected properties
+        if (
+          parsedPrices &&
+          typeof parsedPrices === "object" &&
+          (parsedPrices.gold24K || parsedPrices.silver)
+        ) {
+          setLivePrices(parsedPrices);
+
+          console.log("Valid live prices loaded from storage");
+        } else {
+          console.warn("Invalid price data found in storage, clearing...");
+          localStorage.removeItem(STORAGE_KEYS.LIVE_PRICES);
+        }
+      }
+
+      if (savedTimestamp) {
+        // Validate timestamp is reasonable (not too old, not in future)
+        const timestamp = new Date(savedTimestamp);
+        const now = new Date();
+        const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+        if (timestamp >= oneWeekAgo && timestamp <= now) {
+          setLastUpdated(savedTimestamp);
+        } else {
+          console.warn("Timestamp too old or invalid, clearing...");
+          localStorage.removeItem(STORAGE_KEYS.LAST_UPDATED);
+        }
+      }
+
+      if (savedSource) {
+        setLiveDataSource(savedSource);
+      }
+    } catch (error) {
+      console.error("Error loading live prices from localStorage:", error);
+      // Clear potentially corrupted data
+      localStorage.removeItem(STORAGE_KEYS.LIVE_PRICES);
+      localStorage.removeItem(STORAGE_KEYS.LAST_UPDATED);
+      localStorage.removeItem(STORAGE_KEYS.LIVE_DATA_SOURCE);
+    }
+  };
+
   const fetchMetalPrices = async () => {
     try {
       setIsLoading(true);
@@ -363,39 +434,116 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
-  const syncLivePrices = async () => {
+  // Function to fetch live prices
+
+  const fetchLivePrices = async () => {
+    setIsFetchingLive(true);
     try {
-      setIsSyncing(true);
-      // Simulate fetching live prices (replace with actual API call)
-      const updatedLivePrices = {
-        gold24K: Math.round((6847 + (Math.random() - 0.5) * 100) * 100) / 100,
-        gold22K: Math.round((6280 + (Math.random() - 0.5) * 100) * 100) / 100,
-        gold18K: Math.round((5135 + (Math.random() - 0.5) * 100) * 100) / 100,
-        gold14K: Math.round((3995 + (Math.random() - 0.5) * 100) * 100) / 100,
-        silver: Math.round((84.5 + (Math.random() - 0.5) * 5) * 100) / 100,
-      };
-
-      setLivePrices(updatedLivePrices);
-      setMetalPrices(updatedLivePrices);
-
-      // Save to database
-      const token = localStorage.getItem("token");
-      await axios.put(
-        "http://localhost:5000/api/metal-prices",
-        updatedLivePrices,
+      const response = await fetch(
+        "http://localhost:5000/api/metal-prices/live",
         {
+          method: "GET",
           headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Update state
+        setLivePrices(data.livePrices);
+        setLastUpdated(data.lastUpdated);
+        setLiveDataSource(data.source);
+
+        // Save to localStorage
+        saveLivePricesToStorage(data.livePrices, data.lastUpdated, data.source);
+
+        alert("Live prices fetched successfully!");
+
+        console.log("Live prices fetched and saved:", {
+          prices: data.livePrices,
+          timestamp: data.lastUpdated,
+          source: data.source,
+        });
+      } else {
+        alert(data.message || "Failed to fetch live prices");
+        console.error("Error fetching live prices:", data.message);
+      }
+    } catch (error) {
+      console.error("Error fetching live prices:", error);
+      alert("Failed to fetch live prices. Please try again.");
+    } finally {
+      setIsFetchingLive(false);
+    }
+  };
+
+  // Function to sync live prices
+  const syncLivePrices = async () => {
+    setIsSyncing(true);
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(
+        "http://localhost:5000/api/metal-prices/sync-live",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
         }
       );
 
-      alert("Live prices synced successfully!");
+      const data = await response.json();
+
+      if (data.success) {
+        // Update local state with synced prices
+        setMetalPrices({
+          gold24K: data.metalPrices.gold24K,
+          gold22K: data.metalPrices.gold22K,
+          gold18K: data.metalPrices.gold18K,
+          gold14K: data.metalPrices.gold14K,
+          silver: data.metalPrices.silver,
+        });
+
+        // Update live prices display
+        setLivePrices(data.livePrices);
+        setLastUpdated(data.syncedAt);
+        setLiveDataSource("GoldAPI.io (Synced)");
+
+        // Save to localStorage
+        saveLivePricesToStorage(
+          data.livePrices,
+          data.syncedAt,
+          "GoldAPI.io (Synced)"
+        );
+
+        alert("Prices synced successfully from live market data!");
+
+        console.log("Live prices synced and saved:", {
+          prices: data.livePrices,
+          timestamp: data.syncedAt,
+        });
+      } else {
+        alert(data.message || "Failed to sync live prices");
+      }
     } catch (error) {
       console.error("Error syncing live prices:", error);
-      alert("Error syncing live prices. Please try again.");
+      alert("Failed to sync live prices. Please try again.");
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  // Function to save live prices to localStorage
+  const saveLivePricesToStorage = (prices, timestamp, source) => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.LIVE_PRICES, JSON.stringify(prices));
+      localStorage.setItem(STORAGE_KEYS.LAST_UPDATED, timestamp);
+      localStorage.setItem(STORAGE_KEYS.LIVE_DATA_SOURCE, source);
+    } catch (error) {
+      console.error("Error saving live prices to localStorage:", error);
     }
   };
 
@@ -489,6 +637,223 @@ const Dashboard = ({ user, onLogout }) => {
   const toggleAccordion = (section) => {
     setActiveAccordion(activeAccordion === section ? null : section);
   };
+
+  const fetchStonePrices = async () => {
+    try {
+      const response = await axios.get(
+        "http://localhost:5000/api/stone-prices"
+      );
+      if (response.data.success) {
+        setStonePrices(response.data.stonePrices);
+      }
+    } catch (error) {
+      console.error("Error fetching stone prices:", error);
+    }
+  };
+
+  const handleNewStonePriceChange = useCallback((field, value) => {
+    setNewStonePrice((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  }, []);
+
+  const handleEditStonePriceChange = useCallback((field, value) => {
+    setEditingStone((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  }, []);
+
+  const addStonePrice = async () => {
+    if (
+      !newStonePrice.stoneType ||
+      !newStonePrice.weightFrom ||
+      !newStonePrice.weightTo ||
+      !newStonePrice.rate
+    ) {
+      alert("Please fill all fields");
+      return;
+    }
+
+    if (
+      parseFloat(newStonePrice.weightFrom) >= parseFloat(newStonePrice.weightTo)
+    ) {
+      alert("Weight 'From' must be less than weight 'To'");
+      return;
+    }
+
+    try {
+      setIsStoneLoading(true);
+      const token = localStorage.getItem("token");
+      const response = await axios.post(
+        "http://localhost:5000/api/stone-prices",
+        newStonePrice,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.data.success) {
+        setStonePrices((prev) => [...prev, response.data.stonePrice]);
+        setNewStonePrice({
+          stoneType: "Gemstone",
+          weightFrom: "",
+          weightTo: "",
+          rate: "",
+        });
+        alert("Stone price added successfully!");
+      }
+    } catch (error) {
+      console.error("Error adding stone price:", error);
+      alert("Error adding stone price. Please try again.");
+    } finally {
+      setIsStoneLoading(false);
+    }
+  };
+
+  const updateStonePrice = async (id) => {
+    if (
+      !editingStone.stoneType ||
+      !editingStone.weightFrom ||
+      !editingStone.weightTo ||
+      !editingStone.rate
+    ) {
+      alert("Please fill all fields");
+      return;
+    }
+
+    if (
+      parseFloat(editingStone.weightFrom) >= parseFloat(editingStone.weightTo)
+    ) {
+      alert("Weight 'From' must be less than weight 'To'");
+      return;
+    }
+
+    try {
+      setIsStoneLoading(true);
+      const token = localStorage.getItem("token");
+      const response = await axios.put(
+        `http://localhost:5000/api/stone-prices/${id}`,
+        editingStone,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.data.success) {
+        setStonePrices((prev) =>
+          prev.map((stone) =>
+            stone._id === id ? response.data.stonePrice : stone
+          )
+        );
+        setEditingStone(null);
+        alert("Stone price updated successfully!");
+      }
+    } catch (error) {
+      console.error("Error updating stone price:", error);
+      alert("Error updating stone price. Please try again.");
+    } finally {
+      setIsStoneLoading(false);
+    }
+  };
+
+  const deleteStonePrice = async (id) => {
+    if (
+      !window.confirm("Are you sure you want to delete this stone price entry?")
+    ) {
+      return;
+    }
+
+    try {
+      setIsStoneLoading(true);
+      const token = localStorage.getItem("token");
+      const response = await axios.delete(
+        `http://localhost:5000/api/stone-prices/${id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.data.success) {
+        setStonePrices((prev) => prev.filter((stone) => stone._id !== id));
+        alert("Stone price deleted successfully!");
+      }
+    } catch (error) {
+      console.error("Error deleting stone price:", error);
+      alert("Error deleting stone price. Please try again.");
+    } finally {
+      setIsStoneLoading(false);
+    }
+  };
+
+  // Format currency for display
+  const formatCurrency = (amount) => {
+    if (!amount) return "0";
+    return new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  };
+
+  // Format last updated time
+  const formatLastUpdated = (timestamp) => {
+    if (!timestamp) return "Never";
+
+    try {
+      const date = new Date(timestamp);
+
+      // Check if date is valid
+      if (isNaN(date.getTime())) {
+        console.error("Invalid timestamp:", timestamp);
+        return "Invalid Date";
+      }
+
+      // Check if date is too old (before 2020) - likely a timestamp issue
+      if (date.getFullYear() < 2020) {
+        console.error("Timestamp seems to be in wrong format:", timestamp);
+        return "Date Error";
+      }
+
+      return date.toLocaleString("en-IN", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        timeZone: "Asia/Kolkata",
+      });
+    } catch (error) {
+      console.error("Error formatting date:", error);
+      return "Date Error";
+    }
+  };
+
+  // Calculate price change (you can enhance this with historical data)
+  const calculatePriceChange = (currentPrice, previousPrice) => {
+    if (!previousPrice || !currentPrice)
+      return { change: 0, percentage: 0, isPositive: true };
+
+    const change = currentPrice - previousPrice;
+    const percentage = (change / previousPrice) * 100;
+
+    return {
+      change: Math.abs(change),
+      percentage: Math.abs(percentage),
+      isPositive: change >= 0,
+    };
+  };
+
+  // Rendering the main dashboard content
 
   const renderProductsContent = () => (
     <div className="space-y-6">
@@ -615,6 +980,13 @@ const Dashboard = ({ user, onLogout }) => {
             {isLoading ? "Saving..." : "Save Prices"}
           </button>
           <button
+            onClick={fetchLivePrices}
+            disabled={isFetchingLive}
+            className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-300 text-white font-medium rounded-lg transition-colors"
+          >
+            {isFetchingLive ? "Fetching..." : "Fetch Live Prices"}
+          </button>
+          <button
             onClick={syncLivePrices}
             disabled={isSyncing}
             className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white font-medium rounded-lg transition-colors"
@@ -689,7 +1061,7 @@ const Dashboard = ({ user, onLogout }) => {
                       Current Value
                     </p>
                     <p className={`text-xl font-bold text-${metal.color}-700`}>
-                      ₹{metalPrices[metal.key]?.toLocaleString() || "0"}
+                      {formatCurrency(metalPrices[metal.key] || 0)}
                     </p>
                   </div>
                 </div>
@@ -700,9 +1072,24 @@ const Dashboard = ({ user, onLogout }) => {
 
         {/* Live Prices Section - 1/4 width */}
         <div className="lg:col-span-1">
-          <h5 className="text-sm font-semibold text-gray-700 mb-4">
-            Live Metal Price
-          </h5>
+          <div className="flex items-center justify-between mb-4">
+            <h5 className="text-sm font-semibold text-gray-700">
+              Live Metal Prices
+            </h5>
+            <div className="flex items-center space-x-2">
+              {liveDataSource && (
+                <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">
+                  {liveDataSource}
+                </span>
+              )}
+              {Object.keys(livePrices).length > 0 && (
+                <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
+                  Cached
+                </span>
+              )}
+            </div>
+          </div>
+
           <div className="space-y-3">
             {[
               { key: "gold24K", label: "Gold 24K", color: "yellow" },
@@ -710,33 +1097,58 @@ const Dashboard = ({ user, onLogout }) => {
               { key: "gold18K", label: "Gold 18K", color: "yellow" },
               { key: "gold14K", label: "Gold 14K", color: "yellow" },
               { key: "silver", label: "Silver", color: "gray" },
-            ].map((metal) => (
-              <div
-                key={metal.key}
-                className="bg-white rounded-lg p-3 border border-gray-200 shadow-sm"
-              >
-                <div className="text-center">
-                  <p className="text-xs font-medium text-gray-600 mb-1">
-                    {metal.label}
-                  </p>
-                  <p className={`text-lg font-bold text-${metal.color}-700`}>
-                    ₹{livePrices[metal.key]?.toLocaleString()}
-                  </p>
-                  <p className="text-xs text-green-600 mt-1">
-                    {Math.random() > 0.5 ? "+" : "-"}₹
-                    {Math.floor(Math.random() * 50)} today
-                  </p>
+            ].map((metal) => {
+              const priceChange = calculatePriceChange(
+                livePrices[metal.key],
+                metalPrices[metal.key]
+              );
+
+              return (
+                <div
+                  key={metal.key}
+                  className="bg-white rounded-lg p-3 border border-gray-200 shadow-sm hover:shadow-md transition-shadow"
+                >
+                  <div className="text-center">
+                    <p className="text-xs font-medium text-gray-600 mb-1">
+                      {metal.label}
+                    </p>
+                    <p className={`text-lg font-bold text-${metal.color}-700`}>
+                      {livePrices[metal.key]
+                        ? formatCurrency(livePrices[metal.key])
+                        : "₹0.00"}
+                    </p>
+                    {livePrices[metal.key] && metalPrices[metal.key] && (
+                      <p
+                        className={`text-xs mt-1 ${
+                          priceChange.isPositive
+                            ? "text-green-600"
+                            : "text-red-600"
+                        }`}
+                      >
+                        {priceChange.isPositive ? "+" : "-"}₹
+                        {priceChange.change.toFixed(2)} (
+                        {priceChange.percentage.toFixed(2)}%)
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
               <p className="text-xs text-blue-700 text-center mb-2">
-                Last Updated
+                {Object.keys(livePrices).length > 0
+                  ? "Last Fetched"
+                  : "No Data Available"}
               </p>
               <p className="text-xs font-medium text-blue-900 text-center">
-                {new Date().toLocaleTimeString()}
+                {formatLastUpdated(lastUpdated)}
               </p>
+              {Object.keys(livePrices).length === 0 && (
+                <p className="text-xs text-gray-500 text-center mt-2">
+                  Click "Fetch Live Prices" to get current rates
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -1017,16 +1429,266 @@ const Dashboard = ({ user, onLogout }) => {
 
   const renderStonePricesAccordionContent = () => (
     <div className="space-y-6">
-      <div className="text-center py-12">
-        <div className="w-16 h-16 bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
-          <span className="text-white text-2xl font-bold">💎</span>
-        </div>
-        <h4 className="text-lg font-semibold text-gray-900 mb-2">
+      <div className="flex justify-between items-center">
+        <h4 className="text-md font-semibold text-gray-800">
           Stone Price Management
         </h4>
-        <p className="text-gray-600">
-          Stone pricing functionality will be implemented here.
-        </p>
+        <button
+          onClick={addStonePrice}
+          disabled={isStoneLoading}
+          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white font-medium rounded-lg transition-colors"
+        >
+          {isStoneLoading ? "Adding..." : "Add Stone Price"}
+        </button>
+      </div>
+
+      {/* Add New Stone Price Form */}
+      <div className="bg-gradient-to-r from-emerald-50 to-green-50 rounded-lg p-6 border border-emerald-200">
+        <h5 className="text-sm font-semibold text-emerald-900 mb-4">
+          Add New Stone Price Entry
+        </h5>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-emerald-900 mb-2">
+              Stone Type
+            </label>
+            <select
+              value={newStonePrice.stoneType}
+              onChange={(e) =>
+                handleNewStonePriceChange("stoneType", e.target.value)
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+            >
+              <option value="Gemstone">Gemstone</option>
+              <option value="Moissanite">Moissanite</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-emerald-900 mb-2">
+              Weight From (gm)
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={newStonePrice.weightFrom}
+              onChange={(e) =>
+                handleNewStonePriceChange("weightFrom", e.target.value)
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              placeholder="0.00"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-emerald-900 mb-2">
+              Weight To (gm)
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={newStonePrice.weightTo}
+              onChange={(e) =>
+                handleNewStonePriceChange("weightTo", e.target.value)
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              placeholder="0.00"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-emerald-900 mb-2">
+              Rate (₹)
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={newStonePrice.rate}
+              onChange={(e) =>
+                handleNewStonePriceChange("rate", e.target.value)
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              placeholder="0.00"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Stone Prices List */}
+      <div className="space-y-4">
+        <h5 className="text-sm font-semibold text-gray-700">
+          Current Stone Prices
+        </h5>
+
+        {stonePrices.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <p>No stone prices added yet. Add your first stone price above.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full bg-white rounded-lg shadow-sm border border-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                    Stone Type
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                    Weight Range (gm)
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                    Rate (₹)
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                    Updated By
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                    Updated At
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {stonePrices.map((stone) => (
+                  <tr key={stone._id} className="hover:bg-gray-50">
+                    {editingStone && editingStone._id === stone._id ? (
+                      // Edit mode
+                      <>
+                        <td className="px-4 py-3">
+                          <select
+                            value={editingStone.stoneType}
+                            onChange={(e) =>
+                              handleEditStonePriceChange(
+                                "stoneType",
+                                e.target.value
+                              )
+                            }
+                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                          >
+                            <option value="Gemstone">Gemstone</option>
+                            <option value="Moissanite">Moissanite</option>
+                          </select>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex space-x-1 items-center">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={editingStone.weightFrom}
+                              onChange={(e) =>
+                                handleEditStonePriceChange(
+                                  "weightFrom",
+                                  e.target.value
+                                )
+                              }
+                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                            />
+                            <span className="text-sm text-gray-500">to</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={editingStone.weightTo}
+                              onChange={(e) =>
+                                handleEditStonePriceChange(
+                                  "weightTo",
+                                  e.target.value
+                                )
+                              }
+                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                            />
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={editingStone.rate}
+                            onChange={(e) =>
+                              handleEditStonePriceChange("rate", e.target.value)
+                            }
+                            className="w-24 px-2 py-1 border border-gray-300 rounded text-sm"
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {stone.updatedBy?.name || "Admin"}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {new Date(stone.updatedAt).toLocaleDateString()}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => updateStonePrice(stone._id)}
+                              disabled={isStoneLoading}
+                              className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => setEditingStone(null)}
+                              className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    ) : (
+                      // View mode
+                      <>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              stone.stoneType === "Gemstone"
+                                ? "bg-emerald-100 text-emerald-800"
+                                : "bg-green-100 text-green-800"
+                            }`}
+                          >
+                            {stone.stoneType}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          {stone.weightFrom} - {stone.weightTo} gm
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900 font-semibold">
+                          ₹ {stone.rate.toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {stone.updatedBy?.name || "Admin"}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {new Date(stone.updatedAt).toLocaleDateString()} at{" "}
+                          {new Date(stone.updatedAt).toLocaleTimeString()}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => setEditingStone(stone)}
+                              className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => deleteStonePrice(stone._id)}
+                              disabled={isStoneLoading}
+                              className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
