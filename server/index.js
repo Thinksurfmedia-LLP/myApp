@@ -6,6 +6,8 @@ import jwt from "jsonwebtoken";
 import axios from "axios";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
+import * as csvParse from "csv-parse";
+
 import dotenv from "dotenv";
 import multer from "multer";
 import path from "path";
@@ -32,9 +34,9 @@ const authLimiter = rateLimit({
 
 // GoldAPI configuration
 const GOLDAPI_CONFIG = {
-  baseURL: 'https://www.goldapi.io/api',
+  baseURL: "https://www.goldapi.io/api",
   apiKey: process.env.GOLDAPI_KEY, // Add your API key to .env file
-  currency: 'INR'
+  currency: "INR",
 };
 
 // User Schema
@@ -236,6 +238,92 @@ const StonePricesSchema = new mongoose.Schema(
 
 const StonePrices = mongoose.model("StonePrices", StonePricesSchema);
 
+// MM to CT Conversion Schema
+const MmToCtSchema = new mongoose.Schema(
+  {
+    type: {
+      type: String,
+      enum: ["round", "fancy"],
+      required: true,
+      lowercase: true, // This will automatically convert to lowercase
+    },
+    size: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    carat: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false,
+      default: null,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+const MmToCt = mongoose.model("MmToCt", MmToCtSchema);
+
+const MakingChargesSchema = new mongoose.Schema(
+  {
+    purity: {
+      type: String,
+      enum: ["14K", "18K", "22K", "24K"],
+      required: true,
+    },
+    weightFrom: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    weightTo: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    rate: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false,
+      default: null,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+const MakingCharges = mongoose.model("MakingCharges", MakingChargesSchema);
+
+
+const SettingsSchema = new mongoose.Schema(
+  {
+    minimumMakingCharge: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    // ... other settings fields
+  },
+  {
+    timestamps: true,
+  }
+);
+
+const Settings = mongoose.model("Settings", SettingsSchema);
+
 // Validation middleware
 const validateInput = (req, res, next) => {
   const { email, password, name } = req.body;
@@ -335,24 +423,35 @@ const upload = multer({
   storage: storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith("image/")) {
+    const allowedMimeTypes = [
+      // Image MIME types for logo upload
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+      // CSV MIME types for bulk uploads
+      "text/csv",
+      "application/vnd.ms-excel",
+      "text/plain",
+    ];
+
+    if (allowedMimeTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error("Only image files allowed"));
+      cb(new Error("Only image and CSV files are allowed"));
     }
   },
 });
-
 
 // Helper function to convert troy ounce to grams and calculate different karat prices
 const convertPrices = (goldPricePerOunce, silverPricePerOunce) => {
   // 1 troy ounce = 31.1035 grams
   const TROY_OUNCE_TO_GRAMS = 31.1035;
-  
+
   // Convert from per ounce to per gram
   const gold24KPerGram = goldPricePerOunce / TROY_OUNCE_TO_GRAMS;
   const silverPerGram = silverPricePerOunce / TROY_OUNCE_TO_GRAMS;
-  
+
   // Calculate different karat prices based on gold content
   // 24K = 100% gold, 22K = 91.7% gold, 18K = 75% gold, 14K = 58.3% gold
   return {
@@ -360,7 +459,7 @@ const convertPrices = (goldPricePerOunce, silverPricePerOunce) => {
     gold22K: Math.round(gold24KPerGram * 0.917 * 100) / 100,
     gold18K: Math.round(gold24KPerGram * 0.75 * 100) / 100,
     gold14K: Math.round(gold24KPerGram * 0.583 * 100) / 100,
-    silver: Math.round(silverPerGram * 100) / 100
+    silver: Math.round(silverPerGram * 100) / 100,
   };
 };
 
@@ -722,13 +821,14 @@ app.get("/api/metal-prices/history", authenticateToken, async (req, res) => {
 // Live metal prices route
 
 // Endpoint to fetch live prices from GoldAPI.io
-app.get('/api/metal-prices/live', async (req, res) => {
+app.get("/api/metal-prices/live", async (req, res) => {
   try {
     // Check if API key is configured
     if (!GOLDAPI_CONFIG.apiKey) {
       return res.status(500).json({
         success: false,
-        message: 'GoldAPI key not configured. Please add GOLDAPI_KEY to environment variables.'
+        message:
+          "GoldAPI key not configured. Please add GOLDAPI_KEY to environment variables.",
       });
     }
 
@@ -736,14 +836,14 @@ app.get('/api/metal-prices/live', async (req, res) => {
     const [goldResponse, silverResponse] = await Promise.all([
       axios.get(`${GOLDAPI_CONFIG.baseURL}/XAU/${GOLDAPI_CONFIG.currency}`, {
         headers: {
-          'x-access-token': GOLDAPI_CONFIG.apiKey
-        }
+          "x-access-token": GOLDAPI_CONFIG.apiKey,
+        },
       }),
       axios.get(`${GOLDAPI_CONFIG.baseURL}/XAG/${GOLDAPI_CONFIG.currency}`, {
         headers: {
-          'x-access-token': GOLDAPI_CONFIG.apiKey
-        }
-      })
+          "x-access-token": GOLDAPI_CONFIG.apiKey,
+        },
+      }),
     ]);
 
     // Extract prices from API response
@@ -751,7 +851,10 @@ app.get('/api/metal-prices/live', async (req, res) => {
     const silverPricePerOunce = silverResponse.data.price;
 
     // Convert and calculate different karat prices
-    const convertedPrices = convertPrices(goldPricePerOunce, silverPricePerOunce);
+    const convertedPrices = convertPrices(
+      goldPricePerOunce,
+      silverPricePerOunce
+    );
 
     // Fix: Handle timestamp properly
     let lastUpdated;
@@ -772,56 +875,57 @@ app.get('/api/metal-prices/live', async (req, res) => {
       success: true,
       livePrices: convertedPrices,
       lastUpdated: new Date(lastUpdated).toISOString(), // Convert to ISO string
-      source: 'GoldAPI.io',
+      source: "GoldAPI.io",
       originalData: {
         goldPerOunce: goldPricePerOunce,
         silverPerOunce: silverPricePerOunce,
         currency: GOLDAPI_CONFIG.currency,
-        rawTimestamp: goldResponse.data.timestamp
-      }
+        rawTimestamp: goldResponse.data.timestamp,
+      },
     });
-
   } catch (error) {
-    console.error('Error fetching live metal prices:', error);
-    
+    console.error("Error fetching live metal prices:", error);
+
     // Handle different types of errors
-    let errorMessage = 'Failed to fetch live metal prices';
+    let errorMessage = "Failed to fetch live metal prices";
     let statusCode = 500;
 
     if (error.response) {
       // API responded with error status
       statusCode = error.response.status;
       if (error.response.status === 401) {
-        errorMessage = 'Invalid API key. Please check your GoldAPI credentials.';
+        errorMessage =
+          "Invalid API key. Please check your GoldAPI credentials.";
       } else if (error.response.status === 429) {
-        errorMessage = 'API rate limit exceeded. Please try again later.';
+        errorMessage = "API rate limit exceeded. Please try again later.";
       } else {
-        errorMessage = error.response.data?.message || 'API request failed';
+        errorMessage = error.response.data?.message || "API request failed";
       }
     } else if (error.request) {
       // Network error
-      errorMessage = 'Network error. Please check your internet connection.';
+      errorMessage = "Network error. Please check your internet connection.";
     }
 
     res.status(statusCode).json({
       success: false,
       message: errorMessage,
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 });
 
-
 // Sync endpoint to update database with live prices
-app.post('/api/metal-prices/sync-live', authenticateToken, async (req, res) => {
+app.post("/api/metal-prices/sync-live", authenticateToken, async (req, res) => {
   try {
     // First fetch live prices
-    const liveResponse = await axios.get(`${req.protocol}://${req.get('host')}/api/metal-prices/live`);
-    
+    const liveResponse = await axios.get(
+      `${req.protocol}://${req.get("host")}/api/metal-prices/live`
+    );
+
     if (!liveResponse.data.success) {
       return res.status(400).json({
         success: false,
-        message: 'Failed to fetch live prices for sync'
+        message: "Failed to fetch live prices for sync",
       });
     }
 
@@ -853,24 +957,21 @@ app.post('/api/metal-prices/sync-live', authenticateToken, async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Prices synced successfully from live market data',
+      message: "Prices synced successfully from live market data",
       metalPrices: metalPrices,
-      syncedFrom: 'GoldAPI.io',
+      syncedFrom: "GoldAPI.io",
       syncedAt: new Date().toISOString(),
-      livePrices: livePrices
+      livePrices: livePrices,
     });
-
   } catch (error) {
-    console.error('Error syncing live metal prices:', error);
+    console.error("Error syncing live metal prices:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to sync live metal prices',
-      error: error.message
+      message: "Failed to sync live metal prices",
+      error: error.message,
     });
   }
 });
-
-
 
 // DIAMOND PRICES ROUTES - Add these after your metal prices routes
 
@@ -1193,6 +1294,620 @@ app.delete("/api/stone-prices/:id", authenticateToken, async (req, res) => {
     });
   }
 });
+
+// MM TO CT CONVERSION ROUTES
+
+// Get all MM to CT conversions
+app.get("/api/mm-to-ct", async (req, res) => {
+  try {
+    const conversions = await MmToCt.find()
+      .sort({ type: 1, size: 1 })
+      .populate("updatedBy", "name email");
+
+    res.json({
+      success: true,
+      conversions,
+    });
+  } catch (error) {
+    console.error("Error fetching MM to CT conversions:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch MM to CT conversions",
+      error: error.message,
+    });
+  }
+});
+
+// Add new MM to CT conversion entry
+app.post("/api/mm-to-ct", authenticateToken, async (req, res) => {
+  try {
+    const { type, size, carat } = req.body;
+
+    // Validation
+    if (!type || !size || !carat) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required.",
+      });
+    }
+
+    // Uncomment this if you want to enforce size and carat to be greater than 0
+    // if (parseFloat(size) <= 0 || parseFloat(carat) <= 0) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Size and carat must be greater than 0.",
+    //   });
+    // }
+
+    // Check if entry already exists
+    const existingEntry = await MmToCt.findOne({
+      type: type.toLowerCase(),
+      size: parseFloat(size),
+    });
+
+    if (existingEntry) {
+      return res.status(400).json({
+        success: false,
+        message: "Entry with this type and size already exists.",
+      });
+    }
+
+    const conversion = new MmToCt({
+      type: type.toLowerCase(),
+      size: parseFloat(size),
+      carat: parseFloat(carat),
+      updatedBy: req.user._id,
+    });
+
+    await conversion.save();
+
+    res.json({
+      success: true,
+      message: "MM to CT conversion added successfully",
+      conversion: await conversion.populate("updatedBy", "name email"),
+    });
+  } catch (error) {
+    console.error("Error adding MM to CT conversion:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to add MM to CT conversion",
+      error: error.message,
+    });
+  }
+});
+
+// Update MM to CT conversion entry
+app.put("/api/mm-to-ct/:id", authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { type, size, carat } = req.body;
+
+    // Validation
+    if (!type || !size || !carat) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required.",
+      });
+    }
+
+    // Uncomment this if you want to enforce size and carat to be greater than 0
+    // if (parseFloat(size) <= 0 || parseFloat(carat) <= 0) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Size and carat must be greater than 0.",
+    //   });
+    // }
+
+    const updatedConversion = await MmToCt.findByIdAndUpdate(
+      id,
+      {
+        type: type.toLowerCase(),
+        size: parseFloat(size),
+        carat: parseFloat(carat),
+        updatedBy: req.user._id,
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    ).populate("updatedBy", "name email");
+
+    if (!updatedConversion) {
+      return res.status(404).json({
+        success: false,
+        message: "MM to CT conversion entry not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "MM to CT conversion updated successfully",
+      conversion: updatedConversion,
+    });
+  } catch (error) {
+    console.error("Error updating MM to CT conversion:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update MM to CT conversion",
+      error: error.message,
+    });
+  }
+});
+
+// Delete MM to CT conversion entry
+app.delete("/api/mm-to-ct/:id", authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const deletedConversion = await MmToCt.findByIdAndDelete(id);
+
+    if (!deletedConversion) {
+      return res.status(404).json({
+        success: false,
+        message: "MM to CT conversion entry not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "MM to CT conversion deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting MM to CT conversion:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete MM to CT conversion",
+      error: error.message,
+    });
+  }
+});
+
+// Bulk upload MM to CT conversions from CSV
+app.post(
+  "/api/mm-to-ct/bulk-upload",
+  authenticateToken,
+  upload.single("csvFile"),
+  async (req, res) => {
+    try {
+      // Check if a file was uploaded
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: "No CSV file uploaded",
+        });
+      }
+
+      // Read the CSV file
+      const csvData = fs.readFileSync(req.file.path, "utf8");
+
+      // Use csv-parse to parse CSV content with header
+      const records = csvParse.parse(csvData, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+      });
+
+      // Log the parsed records for debugging
+      console.log("Parsed CSV Records:", records);
+
+      // Check if records are valid
+      if (!Array.isArray(records) || records.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "CSV file must contain at least one data row",
+        });
+      }
+
+      const results = [];
+      const errors = [];
+
+      // Process each record
+      for (let i = 0; i < records.length; i++) {
+        const row = records[i];
+        // Extract and normalize fields
+        const typeRaw = row.type;
+        const sizeRaw = row.size;
+        const caratRaw = row.carat;
+
+        // Check for missing fields
+        if (!typeRaw || !sizeRaw || !caratRaw) {
+          errors.push(`Row ${i + 2}: Missing required fields`);
+          continue;
+        }
+
+        const type = typeRaw.toLowerCase();
+        const sizeNum = parseFloat(sizeRaw);
+        const caratNum = parseFloat(caratRaw);
+
+        // Validate the type
+        if (!["round", "fancy"].includes(type)) {
+          errors.push(`Row ${i + 2}: Type must be 'round' or 'fancy'`);
+          continue;
+        }
+
+        // Validate size and carat
+        if (
+          isNaN(sizeNum) ||
+          isNaN(caratNum) ||
+          sizeNum <= 0 ||
+          caratNum <= 0
+        ) {
+          errors.push(
+            `Row ${i + 2}: Size and carat must be valid positive numbers`
+          );
+          continue;
+        }
+
+        try {
+          // Check for existing entry
+          const existingEntry = await MmToCt.findOne({ type, size: sizeNum });
+
+          if (existingEntry) {
+            existingEntry.carat = caratNum;
+            existingEntry.updatedBy = req.user._id;
+            await existingEntry.save();
+            results.push({
+              action: "updated",
+              type,
+              size: sizeNum,
+              carat: caratNum,
+            });
+          } else {
+            const conversion = new MmToCt({
+              type,
+              size: sizeNum,
+              carat: caratNum,
+              updatedBy: req.user._id,
+            });
+            await conversion.save();
+            results.push({
+              action: "created",
+              type,
+              size: sizeNum,
+              carat: caratNum,
+            });
+          }
+        } catch (dbError) {
+          errors.push(`Row ${i + 2}: Database error - ${dbError.message}`);
+        }
+      }
+
+      // Remove uploaded file
+      fs.unlinkSync(req.file.path);
+
+      // Respond with results and errors
+      res.json({
+        success: true,
+        message: `Bulk upload completed. ${results.length} entries processed.`,
+        results,
+        errors,
+      });
+    } catch (error) {
+      console.error("Error processing bulk upload:", error);
+
+      // Clean up uploaded file if it exists
+      if (req.file && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+
+      res.status(500).json({
+        success: false,
+        message: "Failed to process bulk upload",
+        error: error.message,
+      });
+    }
+  }
+);
+
+// Download CSV template
+app.get("/api/mm-to-ct/template", (req, res) => {
+  try {
+    const csvContent = "type,size,carat\nround,1.0,0.005\nfancy,1.5,0.015";
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="mm-to-ct-template.csv"'
+    );
+    res.send(csvContent);
+  } catch (error) {
+    console.error("Error generating template:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to generate template",
+    });
+  }
+});
+
+// Download selected entries as CSV
+app.post("/api/mm-to-ct/download", authenticateToken, async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    let conversions;
+    if (ids && ids.length > 0) {
+      // Download selected entries
+      conversions = await MmToCt.find({ _id: { $in: ids } }).sort({
+        type: 1,
+        size: 1,
+      });
+    } else {
+      // Download all entries
+      conversions = await MmToCt.find().sort({ type: 1, size: 1 });
+    }
+
+    let csvContent = "type,size,carat\n";
+    conversions.forEach((conversion) => {
+      csvContent += `${conversion.type},${conversion.size},${conversion.carat}\n`;
+    });
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="mm-to-ct-data.csv"'
+    );
+    res.send(csvContent);
+  } catch (error) {
+    console.error("Error downloading CSV:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to download CSV",
+      error: error.message,
+    });
+  }
+});
+
+// Delete multiple MM to CT conversion entries
+app.delete("/api/mm-to-ct/bulk-delete", authenticateToken, async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No IDs provided for deletion",
+      });
+    }
+
+    const result = await MmToCt.deleteMany({ _id: { $in: ids } });
+
+    res.json({
+      success: true,
+      message: `${result.deletedCount} entries deleted successfully`,
+      deletedCount: result.deletedCount,
+    });
+  } catch (error) {
+    console.error("Error in bulk delete:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete entries",
+      error: error.message,
+    });
+  }
+});
+
+// Making Charges routes
+
+app.get("/api/making-charges", async (req, res) => {
+  try {
+    const makingCharges = await MakingCharges.find()
+      .sort({ purity: 1, weightFrom: 1 })
+      .populate("updatedBy", "name email");
+
+    res.json({
+      success: true,
+      makingCharges,
+    });
+  } catch (error) {
+    console.error("Error fetching making charges:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch making charges",
+      error: error.message,
+    });
+  }
+});
+
+app.post("/api/making-charges", authenticateToken, async (req, res) => {
+  try {
+    const { purity, weightFrom, weightTo, rate } = req.body;
+
+    if (!purity || !weightFrom || !weightTo || !rate) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required.",
+      });
+    }
+
+    if (parseFloat(weightFrom) >= parseFloat(weightTo)) {
+      return res.status(400).json({
+        success: false,
+        message: "'From Weight' must be less than 'To Weight'.",
+      });
+    }
+
+    if (parseFloat(rate) <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Rate must be greater than 0.",
+      });
+    }
+
+    const newCharge = new MakingCharges({
+      purity,
+      weightFrom: parseFloat(weightFrom),
+      weightTo: parseFloat(weightTo),
+      rate: parseFloat(rate),
+      updatedBy: req.user._id,
+    });
+
+    await newCharge.save();
+
+    res.json({
+      success: true,
+      message: "Making charge added successfully",
+      makingCharge: await newCharge.populate("updatedBy", "name email"),
+    });
+  } catch (error) {
+    console.error("Error adding making charge:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to add making charge",
+      error: error.message,
+    });
+  }
+});
+
+app.put("/api/making-charges/:id", authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { purity, weightFrom, weightTo, rate } = req.body;
+
+    if (!purity || !weightFrom || !weightTo || !rate) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required.",
+      });
+    }
+
+    if (parseFloat(weightFrom) >= parseFloat(weightTo)) {
+      return res.status(400).json({
+        success: false,
+        message: "'From Weight' must be less than 'To Weight'.",
+      });
+    }
+
+    if (parseFloat(rate) <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Rate must be greater than 0.",
+      });
+    }
+
+    const updatedCharge = await MakingCharges.findByIdAndUpdate(
+      id,
+      {
+        purity,
+        weightFrom: parseFloat(weightFrom),
+        weightTo: parseFloat(weightTo),
+        rate: parseFloat(rate),
+        updatedBy: req.user._id,
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    ).populate("updatedBy", "name email");
+
+    if (!updatedCharge) {
+      return res.status(404).json({
+        success: false,
+        message: "Making charge entry not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Making charge updated successfully",
+      makingCharge: updatedCharge,
+    });
+  } catch (error) {
+    console.error("Error updating making charge:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update making charge",
+      error: error.message,
+    });
+  }
+});
+
+app.delete("/api/making-charges/:id", authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const deletedCharge = await MakingCharges.findByIdAndDelete(id);
+
+    if (!deletedCharge) {
+      return res.status(404).json({
+        success: false,
+        message: "Making charge entry not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Making charge deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting making charge:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete making charge",
+      error: error.message,
+    });
+  }
+});
+
+
+
+// Route to get minimum making charge
+app.get("/api/settings/minimum-making-charge", authenticateToken, async (req, res) => {
+  try {
+    let settings = await Settings.findOne();
+    if (!settings) {
+      // Create default settings if none exist
+      settings = new Settings({ minimumMakingCharge: 0 });
+      await settings.save();
+    }
+    res.json({
+      success: true,
+      minimumMakingCharge: settings.minimumMakingCharge,
+    });
+  } catch (error) {
+    console.error("Error fetching minimum making charge:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch minimum making charge",
+      error: error.message,
+    });
+  }
+});
+
+// Route to update minimum making charge
+app.put("/api/settings/minimum-making-charge", authenticateToken, async (req, res) => {
+  try {
+    const { minimumMakingCharge } = req.body;
+    if (minimumMakingCharge === undefined || minimumMakingCharge === null || isNaN(minimumMakingCharge) || minimumMakingCharge < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid minimum making charge",
+      });
+    }
+
+    let settings = await Settings.findOne();
+    if (!settings) {
+      settings = new Settings({ minimumMakingCharge });
+    } else {
+      settings.minimumMakingCharge = minimumMakingCharge;
+    }
+    await settings.save();
+
+    res.json({
+      success: true,
+      message: "Minimum making charge updated successfully",
+      minimumMakingCharge: settings.minimumMakingCharge,
+    });
+  } catch (error) {
+    console.error("Error updating minimum making charge:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update minimum making charge",
+      error: error.message,
+    });
+  }
+});
+
+
 
 mongoose
   .connect(process.env.MONGODB_URI)

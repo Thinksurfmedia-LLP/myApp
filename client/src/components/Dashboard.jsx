@@ -119,8 +119,39 @@ const Dashboard = ({ user, onLogout }) => {
     LIVE_DATA_SOURCE: "liveDataSource",
   };
 
+  // MM to CT conversion states
+  const [mmToCtData, setMmToCtData] = useState([]);
+  const [newMmToCt, setNewMmToCt] = useState({
+    type: "round",
+    size: "",
+    carat: "",
+  });
+  const [editingMmToCt, setEditingMmToCt] = useState(null);
+  const [isMmToCtLoading, setIsMmToCtLoading] = useState(false);
+  const [selectedMmToCtIds, setSelectedMmToCtIds] = useState([]);
+  const [selectAllMmToCt, setSelectAllMmToCt] = useState(false);
+  const csvFileInputRef = useRef(null);
+
+  // Making Charges state
+  const [makingCharges, setMakingCharges] = useState([]);
+  const [newMakingCharge, setNewMakingCharge] = useState({
+    purity: "14K",
+    weightFrom: "",
+    weightTo: "",
+    rate: "",
+  });
+  const [editingMakingCharge, setEditingMakingCharge] = useState(null);
+  const [isMakingChargesLoading, setIsMakingChargesLoading] = useState(false);
+
+  const [minimumMakingCharge, setMinimumMakingCharge] = useState("");
+  const [isMinChargeLoading, setIsMinChargeLoading] = useState(false);
+
   useEffect(() => {
     fetchMetalPrices();
+  }, []);
+
+  useEffect(() => {
+    fetchMmToCtData();
   }, []);
 
   useEffect(() => {
@@ -133,6 +164,14 @@ const Dashboard = ({ user, onLogout }) => {
   useEffect(() => {
     localStorage.setItem("activeConfigTab", activeConfigTab);
   }, [activeConfigTab]);
+
+  useEffect(() => {
+    fetchMakingCharges();
+  }, []);
+
+  useEffect(() => {
+    fetchMinimumMakingCharge();
+  }, []);
 
   useEffect(() => {
     const fetchLastUpdate = async () => {
@@ -345,7 +384,7 @@ const Dashboard = ({ user, onLogout }) => {
         ) {
           setLivePrices(parsedPrices);
 
-          console.log("Valid live prices loaded from storage");
+          // console.log("Valid live prices loaded from storage");
         } else {
           console.warn("Invalid price data found in storage, clearing...");
           localStorage.removeItem(STORAGE_KEYS.LIVE_PRICES);
@@ -851,6 +890,509 @@ const Dashboard = ({ user, onLogout }) => {
       percentage: Math.abs(percentage),
       isPositive: change >= 0,
     };
+  };
+
+  // MM to CT Conversion Functions
+  const fetchMmToCtData = async () => {
+    try {
+      const response = await axios.get("http://localhost:5000/api/mm-to-ct");
+      if (response.data.success) {
+        setMmToCtData(response.data.conversions);
+      }
+    } catch (error) {
+      console.error("Error fetching MM to CT data:", error);
+    }
+  };
+
+  const handleNewMmToCtChange = useCallback((field, value) => {
+    setNewMmToCt((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  }, []);
+
+  const handleEditMmToCtChange = useCallback((field, value) => {
+    setEditingMmToCt((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  }, []);
+
+  const addMmToCtEntry = async () => {
+    if (!newMmToCt.type || !newMmToCt.size || !newMmToCt.carat) {
+      alert("Please fill all fields");
+      return;
+    }
+
+    // Uncomment this if you want to enforce size and carat to be greater than 0
+    // if (parseFloat(newMmToCt.size) <= 0 || parseFloat(newMmToCt.carat) <= 0) {
+    //   alert("Size and carat must be greater than 0");
+    //   return;
+    // }
+
+    try {
+      setIsMmToCtLoading(true);
+      const token = localStorage.getItem("token");
+      const response = await axios.post(
+        "http://localhost:5000/api/mm-to-ct",
+        newMmToCt,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.data.success) {
+        setMmToCtData((prev) => [...prev, response.data.conversion]);
+        setNewMmToCt({
+          type: "round",
+          size: "",
+          carat: "",
+        });
+        alert("MM to CT conversion added successfully!");
+      }
+    } catch (error) {
+      console.error("Error adding MM to CT conversion:", error);
+      alert(
+        error.response?.data?.message ||
+          "Error adding MM to CT conversion. Please try again."
+      );
+    } finally {
+      setIsMmToCtLoading(false);
+    }
+  };
+
+  const updateMmToCtEntry = async (id) => {
+    if (!editingMmToCt.type || !editingMmToCt.size || !editingMmToCt.carat) {
+      alert("Please fill all fields");
+      return;
+    }
+
+    // Uncomment this if you want to enforce size and carat to be greater than 0
+    // if (
+    //   parseFloat(editingMmToCt.size) <= 0 ||
+    //   parseFloat(editingMmToCt.carat) <= 0
+    // ) {
+    //   alert("Size and carat must be greater than 0");
+    //   return;
+    // }
+
+    try {
+      setIsMmToCtLoading(true);
+      const token = localStorage.getItem("token");
+      const response = await axios.put(
+        `http://localhost:5000/api/mm-to-ct/${id}`,
+        editingMmToCt,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.data.success) {
+        setMmToCtData((prev) =>
+          prev.map((item) =>
+            item._id === id ? response.data.conversion : item
+          )
+        );
+        setEditingMmToCt(null);
+        alert("MM to CT conversion updated successfully!");
+      }
+    } catch (error) {
+      console.error("Error updating MM to CT conversion:", error);
+      alert(
+        error.response?.data?.message ||
+          "Error updating MM to CT conversion. Please try again."
+      );
+    } finally {
+      setIsMmToCtLoading(false);
+    }
+  };
+
+  const deleteMmToCtEntry = async (id) => {
+    if (
+      !window.confirm(
+        "Are you sure you want to delete this MM to CT conversion entry?"
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setIsMmToCtLoading(true);
+      const token = localStorage.getItem("token");
+      const response = await axios.delete(
+        `http://localhost:5000/api/mm-to-ct/${id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.data.success) {
+        setMmToCtData((prev) => prev.filter((item) => item._id !== id));
+        alert("MM to CT conversion deleted successfully!");
+      }
+    } catch (error) {
+      console.error("Error deleting MM to CT conversion:", error);
+      alert("Error deleting MM to CT conversion. Please try again.");
+    } finally {
+      setIsMmToCtLoading(false);
+    }
+  };
+
+  const handleMmToCtSelection = (id) => {
+    setSelectedMmToCtIds((prev) => {
+      if (prev.includes(id)) {
+        return prev.filter((selectedId) => selectedId !== id);
+      } else {
+        return [...prev, id];
+      }
+    });
+  };
+
+  const handleSelectAllMmToCt = () => {
+    if (selectAllMmToCt) {
+      setSelectedMmToCtIds([]);
+    } else {
+      setSelectedMmToCtIds(mmToCtData.map((item) => item._id));
+    }
+    setSelectAllMmToCt(!selectAllMmToCt);
+  };
+
+  const downloadTemplate = () => {
+    const link = document.createElement("a");
+    link.href = "http://localhost:5000/api/mm-to-ct/template";
+    link.download = "mm-to-ct-template.csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const downloadSelectedData = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.post(
+        "http://localhost:5000/api/mm-to-ct/download",
+        { ids: selectedMmToCtIds },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          responseType: "blob",
+        }
+      );
+
+      const blob = new Blob([response.data], { type: "text/csv" });
+      const link = document.createElement("a");
+      link.href = window.URL.createObjectURL(blob);
+      link.download = "mm-to-ct-data.csv";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error("Error downloading CSV:", error);
+      alert("Error downloading CSV. Please try again.");
+    }
+  };
+
+  const handleCSVUpload = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    if (file.type !== "text/csv" && !file.name.endsWith(".csv")) {
+      alert("Please select a CSV file");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("csvFile", file);
+
+    uploadCSV(formData);
+  };
+
+  const uploadCSV = async (formData) => {
+    try {
+      setIsMmToCtLoading(true);
+      const token = localStorage.getItem("token");
+      const response = await axios.post(
+        "http://localhost:5000/api/mm-to-ct/bulk-upload",
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+
+      if (response.data.success) {
+        await fetchMmToCtData(); // Refresh data
+        alert(
+          `Bulk upload completed successfully!\n${
+            response.data.results.length
+          } entries processed.\n${
+            response.data.errors.length > 0
+              ? `Errors: ${response.data.errors.length}`
+              : "No errors."
+          }`
+        );
+
+        if (response.data.errors.length > 0) {
+          console.log("Upload errors:", response.data.errors);
+        }
+      }
+    } catch (error) {
+      console.error("Error uploading CSV:", error);
+      alert(
+        error.response?.data?.message ||
+          "Error uploading CSV. Please try again."
+      );
+    } finally {
+      setIsMmToCtLoading(false);
+      // Reset file input
+      if (csvFileInputRef.current) {
+        csvFileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const bulkDeleteSelected = async () => {
+    if (selectedMmToCtIds.length === 0) {
+      alert("Please select entries to delete");
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Are you sure you want to delete ${selectedMmToCtIds.length} selected entries?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setIsMmToCtLoading(true);
+      const token = localStorage.getItem("token");
+      const response = await axios.delete(
+        "http://localhost:5000/api/mm-to-ct/bulk-delete",
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          data: { ids: selectedMmToCtIds },
+        }
+      );
+
+      if (response.data.success) {
+        await fetchMmToCtData(); // Refresh data
+        setSelectedMmToCtIds([]);
+        setSelectAllMmToCt(false);
+        alert(`${response.data.deletedCount} entries deleted successfully!`);
+      }
+    } catch (error) {
+      console.error("Error bulk deleting entries:", error);
+      alert("Error deleting entries. Please try again.");
+    } finally {
+      setIsMmToCtLoading(false);
+    }
+  };
+
+  const fetchMakingCharges = async () => {
+    try {
+      setIsMakingChargesLoading(true);
+      const response = await axios.get(
+        "http://localhost:5000/api/making-charges"
+      );
+      if (response.data.success) {
+        setMakingCharges(response.data.makingCharges);
+      }
+    } catch (error) {
+      console.error("Error fetching making charges:", error);
+    } finally {
+      setIsMakingChargesLoading(false);
+    }
+  };
+
+  const handleNewMakingChargeChange = (field, value) => {
+    setNewMakingCharge((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleEditMakingChargeChange = (field, value) => {
+    setEditingMakingCharge((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const addMakingCharge = async () => {
+    if (
+      !newMakingCharge.purity ||
+      !newMakingCharge.weightFrom ||
+      !newMakingCharge.weightTo ||
+      !newMakingCharge.rate
+    ) {
+      alert("Please fill all fields");
+      return;
+    }
+    if (
+      parseFloat(newMakingCharge.weightFrom) >=
+      parseFloat(newMakingCharge.weightTo)
+    ) {
+      alert("'From Weight' must be less than 'To Weight'");
+      return;
+    }
+    if (parseFloat(newMakingCharge.rate) <= 0) {
+      alert("Rate must be greater than 0");
+      return;
+    }
+    try {
+      setIsMakingChargesLoading(true);
+      const token = localStorage.getItem("token");
+      const response = await axios.post(
+        "http://localhost:5000/api/making-charges",
+        newMakingCharge,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (response.data.success) {
+        setMakingCharges((prev) => [...prev, response.data.makingCharge]);
+        setNewMakingCharge({
+          purity: "14K",
+          weightFrom: "",
+          weightTo: "",
+          rate: "",
+        });
+        alert("Making charge added successfully!");
+      }
+    } catch (error) {
+      console.error("Error adding making charge:", error);
+      alert(error.response?.data?.message || "Failed to add making charge");
+    } finally {
+      setIsMakingChargesLoading(false);
+    }
+  };
+
+  const updateMakingCharge = async (id) => {
+    if (
+      !editingMakingCharge.purity ||
+      !editingMakingCharge.weightFrom ||
+      !editingMakingCharge.weightTo ||
+      !editingMakingCharge.rate
+    ) {
+      alert("Please fill all fields");
+      return;
+    }
+    if (
+      parseFloat(editingMakingCharge.weightFrom) >=
+      parseFloat(editingMakingCharge.weightTo)
+    ) {
+      alert("'From Weight' must be less than 'To Weight'");
+      return;
+    }
+    if (parseFloat(editingMakingCharge.rate) <= 0) {
+      alert("Rate must be greater than 0");
+      return;
+    }
+    try {
+      setIsMakingChargesLoading(true);
+      const token = localStorage.getItem("token");
+      const response = await axios.put(
+        `http://localhost:5000/api/making-charges/${id}`,
+        editingMakingCharge,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (response.data.success) {
+        setMakingCharges((prev) =>
+          prev.map((item) =>
+            item._id === id ? response.data.makingCharge : item
+          )
+        );
+        setEditingMakingCharge(null);
+        alert("Making charge updated successfully!");
+      }
+    } catch (error) {
+      console.error("Error updating making charge:", error);
+      alert(error.response?.data?.message || "Failed to update making charge");
+    } finally {
+      setIsMakingChargesLoading(false);
+    }
+  };
+
+  const deleteMakingCharge = async (id) => {
+    if (
+      !window.confirm(
+        "Are you sure you want to delete this making charge entry?"
+      )
+    )
+      return;
+    try {
+      setIsMakingChargesLoading(true);
+      const token = localStorage.getItem("token");
+      const response = await axios.delete(
+        `http://localhost:5000/api/making-charges/${id}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (response.data.success) {
+        setMakingCharges((prev) => prev.filter((item) => item._id !== id));
+        alert("Making charge deleted successfully!");
+      }
+    } catch (error) {
+      console.error("Error deleting making charge:", error);
+      alert("Failed to delete making charge");
+    } finally {
+      setIsMakingChargesLoading(false);
+    }
+  };
+
+  // Function to fetch minimum making charge
+  const fetchMinimumMakingCharge = async () => {
+    try {
+      setIsMinChargeLoading(true);
+      const token = localStorage.getItem("token");
+      const response = await axios.get(
+        "http://localhost:5000/api/settings/minimum-making-charge",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (response.data.success) {
+        setMinimumMakingCharge(response.data.minimumMakingCharge.toString());
+      }
+    } catch (error) {
+      console.error("Error fetching minimum making charge:", error);
+    } finally {
+      setIsMinChargeLoading(false);
+    }
+  };
+
+  // Function to update minimum making charge
+
+  const updateMinimumMakingCharge = async () => {
+    if (
+      minimumMakingCharge === "" ||
+      isNaN(parseFloat(minimumMakingCharge)) ||
+      parseFloat(minimumMakingCharge) < 0
+    ) {
+      alert("Please enter a valid non-negative number");
+      return;
+    }
+    try {
+      setIsMinChargeLoading(true);
+      const token = localStorage.getItem("token");
+      const response = await axios.put(
+        "http://localhost:5000/api/settings/minimum-making-charge",
+        { minimumMakingCharge: parseFloat(minimumMakingCharge) },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (response.data.success) {
+        alert("Minimum making charge updated successfully!");
+      }
+    } catch (error) {
+      console.error("Error updating minimum making charge:", error);
+      alert("Failed to update minimum making charge.");
+    } finally {
+      setIsMinChargeLoading(false);
+    }
   };
 
   // Rendering the main dashboard content
@@ -1695,64 +2237,349 @@ const Dashboard = ({ user, onLogout }) => {
 
   const renderMmToCtContent = () => (
     <div className="space-y-6">
+      {/* Header with actions */}
       <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          MM to CT Conversion Chart
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <h4 className="font-medium text-gray-900 mb-3">Round Stones</h4>
-            <div className="space-y-2">
-              {[
-                { mm: "1.0", ct: "0.005" },
-                { mm: "1.5", ct: "0.015" },
-                { mm: "2.0", ct: "0.030" },
-                { mm: "2.5", ct: "0.060" },
-                { mm: "3.0", ct: "0.100" },
-                { mm: "4.0", ct: "0.250" },
-                { mm: "5.0", ct: "0.500" },
-              ].map((item) => (
-                <div
-                  key={item.mm}
-                  className="flex justify-between p-2 bg-gray-50/50 rounded"
-                >
-                  <span className="font-medium">{item.mm} mm</span>
-                  <span className="text-gray-600">{item.ct} ct</span>
-                </div>
-              ))}
-            </div>
-          </div>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <h3 className="text-lg font-semibold text-gray-900">
+            MM to CT Conversion Management
+          </h3>
 
-          <div>
-            <h4 className="font-medium text-gray-900 mb-3">Square Stones</h4>
-            <div className="space-y-2">
-              {[
-                { mm: "1.0x1.0", ct: "0.004" },
-                { mm: "1.5x1.5", ct: "0.014" },
-                { mm: "2.0x2.0", ct: "0.028" },
-                { mm: "2.5x2.5", ct: "0.055" },
-                { mm: "3.0x3.0", ct: "0.095" },
-                { mm: "4.0x4.0", ct: "0.240" },
-                { mm: "5.0x5.0", ct: "0.480" },
-              ].map((item) => (
-                <div
-                  key={item.mm}
-                  className="flex justify-between p-2 bg-gray-50/50 rounded"
+          <div className="flex flex-wrap gap-3">
+            {/* <button
+              onClick={downloadTemplate}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+            >
+              <span className="material-icons text-sm">download</span>
+              Download Template
+            </button> */}
+
+            {/* <div className="relative">
+              <input
+                ref={csvFileInputRef}
+                type="file"
+                accept=".csv"
+                onChange={handleCSVUpload}
+                className="hidden"
+              />
+              <button
+                onClick={() => csvFileInputRef.current?.click()}
+                disabled={isMmToCtLoading}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+              >
+                <span className="material-icons text-sm">upload</span>
+                {isMmToCtLoading ? "Uploading..." : "Upload CSV"}
+              </button>
+            </div> */}
+
+            {selectedMmToCtIds.length > 0 && (
+              <>
+                {/* <button
+                  onClick={downloadSelectedData}
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
                 >
-                  <span className="font-medium">{item.mm} mm</span>
-                  <span className="text-gray-600">{item.ct} ct</span>
-                </div>
-              ))}
+                  <span className="material-icons text-sm">file_download</span>
+                  Download Selected
+                </button> */}
+
+                <button
+                  onClick={bulkDeleteSelected}
+                  disabled={isMmToCtLoading}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <span className="material-icons text-sm">delete</span>
+                  Delete Selected ({selectedMmToCtIds.length})
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Add new entry form */}
+        <div className="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-lg p-6 border border-indigo-200 mb-6">
+          <h5 className="text-sm font-semibold text-indigo-900 mb-4">
+            Add New MM to CT Conversion
+          </h5>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-indigo-900 mb-2">
+                Diamond Type
+              </label>
+              <select
+                value={newMmToCt.type}
+                onChange={(e) => handleNewMmToCtChange("type", e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              >
+                <option value="round">Round</option>
+                <option value="fancy">Fancy</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-indigo-900 mb-2">
+                Size (MM)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={newMmToCt.size}
+                onChange={(e) => handleNewMmToCtChange("size", e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                placeholder="0.86"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-indigo-900 mb-2">
+                Carat Value
+              </label>
+              <input
+                type="number"
+                step="0.001"
+                min="0"
+                value={newMmToCt.carat}
+                onChange={(e) => handleNewMmToCtChange("carat", e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                placeholder="0.119"
+              />
+            </div>
+
+            <div className="flex items-end">
+              <button
+                onClick={addMmToCtEntry}
+                disabled={isMmToCtLoading}
+                className="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-medium rounded-lg transition-colors"
+              >
+                {isMmToCtLoading ? "Adding..." : "Add Entry"}
+              </button>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 p-6">
+      {/* Data Table */}
+      <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 overflow-hidden">
+        {mmToCtData.length === 0 ? (
+          <div className="text-center py-12 text-gray-500">
+            <span className="material-icons text-4xl text-gray-300 mb-4">
+              table_view
+            </span>
+            <p className="text-lg mb-2">No MM to CT conversions found</p>
+            <p className="text-sm">
+              Add your first conversion above or upload a CSV file
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Selection summary */}
+            {selectedMmToCtIds.length > 0 && (
+              <div className="bg-blue-50 border-b border-blue-200 px-6 py-3">
+                <p className="text-sm text-blue-700">
+                  <span className="font-medium">
+                    {selectedMmToCtIds.length}
+                  </span>{" "}
+                  entries selected
+                </p>
+              </div>
+            )}
+
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50/80">
+                  <tr>
+                    <th className="px-4 py-3 text-left">
+                      <input
+                        type="checkbox"
+                        checked={selectAllMmToCt}
+                        onChange={handleSelectAllMmToCt}
+                        className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                    </th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                      Type
+                    </th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                      Size (MM)
+                    </th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                      Carat Value
+                    </th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                      Updated By
+                    </th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                      Updated At
+                    </th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200/50">
+                  {mmToCtData.map((item) => (
+                    <tr
+                      key={item._id}
+                      className="hover:bg-gray-50/50 transition-colors"
+                    >
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedMmToCtIds.includes(item._id)}
+                          onChange={() => handleMmToCtSelection(item._id)}
+                          className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                      </td>
+
+                      {editingMmToCt && editingMmToCt._id === item._id ? (
+                        // Edit mode
+                        <>
+                          <td className="px-4 py-3">
+                            <select
+                              value={editingMmToCt.type}
+                              onChange={(e) =>
+                                handleEditMmToCtChange("type", e.target.value)
+                              }
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                            >
+                              <option value="round">Round</option>
+                              <option value="fancy">Fancy</option>
+                            </select>
+                          </td>
+                          <td className="px-4 py-3">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={editingMmToCt.size}
+                              onChange={(e) =>
+                                handleEditMmToCtChange("size", e.target.value)
+                              }
+                              className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <input
+                              type="number"
+                              step="0.001"
+                              value={editingMmToCt.carat}
+                              onChange={(e) =>
+                                handleEditMmToCtChange("carat", e.target.value)
+                              }
+                              className="w-24 px-2 py-1 border border-gray-300 rounded text-sm"
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {item.updatedBy?.name || "Admin"}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {new Date(item.updatedAt).toLocaleDateString()}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => updateMmToCtEntry(item._id)}
+                                disabled={isMmToCtLoading}
+                                className="px-2 py-1 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white text-xs rounded flex items-center gap-1"
+                              >
+                                <span className="material-icons text-xs">
+                                  save
+                                </span>
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingMmToCt(null)}
+                                className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded flex items-center gap-1"
+                              >
+                                <span className="material-icons text-xs">
+                                  cancel
+                                </span>
+                                Cancel
+                              </button>
+                            </div>
+                          </td>
+                        </>
+                      ) : (
+                        // View mode
+                        <>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                item.type === "round"
+                                  ? "bg-blue-100 text-blue-800"
+                                  : "bg-purple-100 text-purple-800"
+                              }`}
+                            >
+                              {item.type.charAt(0).toUpperCase() +
+                                item.type.slice(1)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-900 font-mono">
+                            {item.size} mm
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-900 font-mono font-semibold">
+                            {item.carat} ct
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {item.updatedBy?.name || "Admin"}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            <div>
+                              <div>
+                                {new Date(item.updatedAt).toLocaleDateString()}
+                              </div>
+                              <div className="text-xs text-gray-400">
+                                {new Date(item.updatedAt).toLocaleTimeString()}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => setEditingMmToCt(item)}
+                                className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded flex items-center gap-1"
+                              >
+                                <span className="material-icons text-xs">
+                                  edit
+                                </span>
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => deleteMmToCtEntry(item._id)}
+                                disabled={isMmToCtLoading}
+                                className="px-2 py-1 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white text-xs rounded flex items-center gap-1"
+                              >
+                                <span className="material-icons text-xs">
+                                  delete
+                                </span>
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Quick Converter - Keep existing functionality */}
+      {/* <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
           Quick Converter
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700">
+              Diamond Type
+            </label>
+            <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+              <option value="round">Round</option>
+              <option value="fancy">Fancy</option>
+            </select>
+          </div>
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-700">
               Size (MM)
@@ -1761,6 +2588,7 @@ const Dashboard = ({ user, onLogout }) => {
               type="number"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               placeholder="Enter size in MM"
+              step="0.01"
             />
           </div>
           <div className="space-y-2">
@@ -1775,94 +2603,295 @@ const Dashboard = ({ user, onLogout }) => {
             />
           </div>
         </div>
-      </div>
+      </div> */}
     </div>
   );
 
   const renderMakingChargesContent = () => (
     <div className="space-y-6">
+      {/* Add New Making Charge Form */}
       <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          Making Charges Configuration
+          Making Charges Management
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[
-            { category: "Rings", percentage: "12%", fixed: "₹500" },
-            { category: "Necklaces", percentage: "15%", fixed: "₹1,200" },
-            { category: "Earrings", percentage: "10%", fixed: "₹300" },
-            { category: "Bracelets", percentage: "14%", fixed: "₹800" },
-            { category: "Pendants", percentage: "13%", fixed: "₹600" },
-            { category: "Chains", percentage: "11%", fixed: "₹400" },
-          ].map((item) => (
-            <div
-              key={item.category}
-              className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-4 border border-indigo-200"
-            >
-              <h4 className="font-medium text-indigo-900 mb-3">
-                {item.category}
-              </h4>
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-sm text-indigo-700">Percentage:</span>
-                  <span className="font-medium text-indigo-900">
-                    {item.percentage}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-indigo-700">Fixed:</span>
-                  <span className="font-medium text-indigo-900">
-                    {item.fixed}
-                  </span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
 
-      <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          Add New Making Charge
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">
-              Category
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+          {/* Purity Dropdown */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Purity
             </label>
-            <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-              <option>Select Category</option>
-              <option>Rings</option>
-              <option>Necklaces</option>
-              <option>Earrings</option>
-              <option>Bracelets</option>
+            <select
+              value={newMakingCharge.purity}
+              onChange={(e) =>
+                handleNewMakingChargeChange("purity", e.target.value)
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="14K">14K</option>
+              <option value="18K">18K</option>
+              <option value="22K">22K</option>
+              <option value="24K">24K</option>
             </select>
           </div>
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">
-              Percentage (%)
+
+          {/* From Weight */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              From Weight (gm)
             </label>
             <input
               type="number"
+              step="0.01"
+              min="0"
+              value={newMakingCharge.weightFrom}
+              onChange={(e) =>
+                handleNewMakingChargeChange("weightFrom", e.target.value)
+              }
+              placeholder="From"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Enter percentage"
             />
           </div>
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">
-              Fixed Amount (₹)
+
+          {/* To Weight */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              To Weight (gm)
             </label>
             <input
               type="number"
+              step="0.01"
+              min="0"
+              value={newMakingCharge.weightTo}
+              onChange={(e) =>
+                handleNewMakingChargeChange("weightTo", e.target.value)
+              }
+              placeholder="To"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Enter fixed amount"
             />
           </div>
+
+          {/* Rate */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Rate (₹)
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={newMakingCharge.rate}
+              onChange={(e) =>
+                handleNewMakingChargeChange("rate", e.target.value)
+              }
+              placeholder="Rate"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          {/* Add Button */}
+          <div className="flex items-end">
+            <button
+              onClick={addMakingCharge}
+              disabled={isMakingChargesLoading}
+              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium rounded-lg transition-colors"
+            >
+              {isMakingChargesLoading ? "Adding..." : "Add"}
+            </button>
+          </div>
         </div>
-        <div className="mt-4">
-          <button className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors">
-            Add Making Charge
-          </button>
-        </div>
+
+        {/* Making Charges List Table */}
+        {makingCharges.length === 0 ? (
+          <div className="text-center py-12 text-gray-500">
+            <span className="material-icons text-4xl text-gray-300 mb-4">
+              list_alt
+            </span>
+            <p className="text-lg mb-2">No making charges found</p>
+            <p className="text-sm">Add making charges using the form above.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full rounded-lg border border-gray-200 shadow-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                    Purity
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                    From Weight (gm)
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                    To Weight (gm)
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                    Rate (₹)
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                    Updated By
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                    Updated At
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {makingCharges.map((item) =>
+                  editingMakingCharge &&
+                  editingMakingCharge._id === item._id ? (
+                    <tr key={item._id} className="bg-blue-50">
+                      <td className="px-4 py-3">
+                        <select
+                          value={editingMakingCharge.purity}
+                          onChange={(e) =>
+                            handleEditMakingChargeChange(
+                              "purity",
+                              e.target.value
+                            )
+                          }
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        >
+                          <option value="14K">14K</option>
+                          <option value="18K">18K</option>
+                          <option value="22K">22K</option>
+                          <option value="24K">24K</option>
+                        </select>
+                      </td>
+                      <td className="px-4 py-3">
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={editingMakingCharge.weightFrom}
+                          onChange={(e) =>
+                            handleEditMakingChargeChange(
+                              "weightFrom",
+                              e.target.value
+                            )
+                          }
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={editingMakingCharge.weightTo}
+                          onChange={(e) =>
+                            handleEditMakingChargeChange(
+                              "weightTo",
+                              e.target.value
+                            )
+                          }
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={editingMakingCharge.rate}
+                          onChange={(e) =>
+                            handleEditMakingChargeChange("rate", e.target.value)
+                          }
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {item.updatedBy?.name || "Admin"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {new Date(item.updatedAt).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => updateMakingCharge(item._id)}
+                            disabled={isMakingChargesLoading}
+                            className="px-2 py-1 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white text-xs rounded"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => setEditingMakingCharge(null)}
+                            className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr
+                      key={item._id}
+                      className="hover:bg-gray-50 transition-colors"
+                    >
+                      <td className="px-4 py-3 text-sm">{item.purity}</td>
+                      <td className="px-4 py-3 text-sm">{item.weightFrom}</td>
+                      <td className="px-4 py-3 text-sm">{item.weightTo}</td>
+                      <td className="px-4 py-3 text-sm font-semibold">
+                        ₹ {item.rate.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {item.updatedBy?.name || "Admin"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {new Date(item.updatedAt).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => setEditingMakingCharge(item)}
+                            className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => deleteMakingCharge(item._id)}
+                            disabled={isMakingChargesLoading}
+                            className="px-2 py-1 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white text-xs rounded"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                )}
+              </tbody>
+            </table>
+            <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 p-6 mt-8 max-w-sm">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                Minimum Making Charge Configuration
+              </h3>
+              <div className="flex items-center space-x-3">
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={minimumMakingCharge}
+                  onChange={(e) => setMinimumMakingCharge(e.target.value)}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Enter minimum making charge"
+                  disabled={isMinChargeLoading}
+                />
+                <button
+                  onClick={updateMinimumMakingCharge}
+                  disabled={isMinChargeLoading}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium rounded-lg transition-colors"
+                >
+                  {isMinChargeLoading ? "Saving..." : "Save"}
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                If calculated making charge is below this minimum, the minimum
+                charge will be applied automatically.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
