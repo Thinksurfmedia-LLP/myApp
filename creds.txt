@@ -1,5 +1,0 @@
-Atlas//
-username: rishikalpa
-password: 4hD0KO3nwa6w63eS
-
-connection string: mongodb+srv://rishikalpa:4hD0KO3nwa6w63eS@cluster0.fexrkw7.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0

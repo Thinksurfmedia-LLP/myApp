@@ -323,6 +323,99 @@ const SettingsSchema = new mongoose.Schema(
 
 const Settings = mongoose.model("Settings", SettingsSchema);
 
+// Add these schemas after your existing schemas
+const ShopifyConfigSchema = new mongoose.Schema(
+  {
+    storeUrl: {
+      type: String,
+      required: true,
+    },
+    accessToken: {
+      type: String,
+      required: true,
+    },
+    apiVersion: {
+      type: String,
+      default: "2024-01",
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    lastSync: {
+      type: Date,
+      default: null,
+    },
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+const ShopifyConfig = mongoose.model("ShopifyConfig", ShopifyConfigSchema);
+
+const ShopifyProductSchema = new mongoose.Schema(
+  {
+    shopifyId: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+    title: {
+      type: String,
+      required: true,
+    },
+    handle: String,
+    description: String,
+    vendor: String,
+    productType: String,
+    tags: [String],
+    status: {
+      type: String,
+      enum: ["active", "archived", "draft"],
+      default: "active",
+    },
+    images: [
+      {
+        url: String,
+        altText: String,
+      },
+    ],
+    variants: [
+      {
+        shopifyVariantId: String,
+        title: String,
+        price: Number,
+        compareAtPrice: Number,
+        sku: String,
+        inventory: Number,
+        weight: Number,
+        weightUnit: String,
+      },
+    ],
+    options: [
+      {
+        name: String,
+        values: [String],
+      },
+    ],
+    lastSynced: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+const ShopifyProduct = mongoose.model("ShopifyProduct", ShopifyProductSchema);
+
 // Validation middleware
 const validateInput = (req, res, next) => {
   const { email, password, name } = req.body;
@@ -461,6 +554,123 @@ const convertPrices = (goldPricePerOunce, silverPricePerOunce) => {
     silver: Math.round(silverPerGram * 100) / 100,
   };
 };
+
+// Shopify API Helper Functions
+const shopifyGraphQL = async (query, variables = {}) => {
+  try {
+    const config = await ShopifyConfig.findOne({ isActive: true });
+    if (!config) {
+      throw new Error("No active Shopify configuration found");
+    }
+
+    const response = await axios.post(
+      `https://${config.storeUrl}/admin/api/${config.apiVersion}/graphql.json`,
+      {
+        query,
+        variables,
+      },
+      {
+        headers: {
+          "X-Shopify-Access-Token": config.accessToken,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (response.data.errors) {
+      throw new Error(`GraphQL Error: ${JSON.stringify(response.data.errors)}`);
+    }
+
+    return response.data.data;
+  } catch (error) {
+    console.error("Shopify GraphQL Error:", error);
+    throw error;
+  }
+};
+
+// GraphQL Queries
+const GET_PRODUCTS_QUERY = `
+  query getProducts($first: Int, $after: String) {
+    products(first: $first, after: $after) {
+      edges {
+        node {
+          id
+          title
+          handle
+          description
+          vendor
+          productType
+          tags
+          status
+          images(first: 10) {
+            edges {
+              node {
+                url
+                altText
+              }
+            }
+          }
+          variants(first: 10) {
+            edges {
+              node {
+                id
+                title
+                price
+                compareAtPrice
+                sku
+                inventoryQuantity
+                weight
+                weightUnit
+              }
+            }
+          }
+          options {
+            name
+            values
+          }
+          createdAt
+          updatedAt
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+`;
+
+const UPDATE_PRODUCT_MUTATION = `
+  mutation productUpdate($input: ProductInput!) {
+    productUpdate(input: $input) {
+      product {
+        id
+        title
+        status
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
+const CREATE_PRODUCT_MUTATION = `
+  mutation productCreate($input: ProductInput!) {
+    productCreate(input: $input) {
+      product {
+        id
+        title
+        handle
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
 
 // Routes
 
@@ -1916,6 +2126,734 @@ app.put(
     }
   }
 );
+
+// SHOPIFY API ROUTES
+
+// Shopify configuration route
+app.post("/api/shopify/config", authenticateToken, async (req, res) => {
+  try {
+    const { storeUrl, accessToken, apiVersion } = req.body;
+
+    // Validation
+    if (!storeUrl || !accessToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Store URL and Access Token are required",
+      });
+    }
+
+    // Clean store URL (remove https:// if present)
+    const cleanStoreUrl = storeUrl.replace(/^https?:\/\//, "");
+
+    // Validate store URL format
+    if (!cleanStoreUrl.includes(".myshopify.com")) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid store URL format. Should be like: store-name.myshopify.com",
+      });
+    }
+
+    // Test the connection first
+    try {
+      const testResponse = await axios.post(
+        `https://${cleanStoreUrl}/admin/api/${
+          apiVersion || "2024-01"
+        }/graphql.json`,
+        {
+          query: `query { shop { name } }`,
+        },
+        {
+          headers: {
+            "X-Shopify-Access-Token": accessToken,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (testResponse.data.errors) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid access token or insufficient permissions",
+        });
+      }
+    } catch (testError) {
+      console.error("Shopify connection test failed:", testError.message);
+      return res.status(400).json({
+        success: false,
+        message:
+          "Failed to connect to Shopify. Please check your store URL and access token.",
+      });
+    }
+
+    // Save or update configuration
+    const config = await ShopifyConfig.findOneAndUpdate(
+      { isActive: true },
+      {
+        storeUrl: cleanStoreUrl,
+        accessToken,
+        apiVersion: apiVersion || "2024-01",
+        isActive: true,
+        updatedBy: req.user.id,
+      },
+      {
+        upsert: true,
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    res.json({
+      success: true,
+      message: "Shopify configuration saved successfully",
+      config: {
+        storeUrl: config.storeUrl,
+        apiVersion: config.apiVersion,
+        updatedAt: config.updatedAt,
+        updatedBy: config.updatedBy,
+      },
+    });
+  } catch (error) {
+    console.error("Error saving Shopify config:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error while saving configuration",
+    });
+  }
+});
+
+// Get product analytics
+app.get("/api/shopify/analytics", authenticateToken, async (req, res) => {
+  try {
+    const totalProducts = await ShopifyProduct.countDocuments();
+    const activeProducts = await ShopifyProduct.countDocuments({
+      status: "active",
+    });
+    const draftProducts = await ShopifyProduct.countDocuments({
+      status: "draft",
+    });
+    const archivedProducts = await ShopifyProduct.countDocuments({
+      status: "archived",
+    });
+
+    const topVendors = await ShopifyProduct.aggregate([
+      { $match: { vendor: { $exists: true, $ne: "" } } },
+      { $group: { _id: "$vendor", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 5 },
+    ]);
+
+    const config = await ShopifyConfig.findOne({ isActive: true });
+
+    res.json({
+      success: true,
+      analytics: {
+        totalProducts,
+        activeProducts,
+        draftProducts,
+        archivedProducts,
+        topVendors,
+        lastSync: config?.lastSync,
+        isConfigured: !!config,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching analytics:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch analytics",
+      error: error.message,
+    });
+  }
+});
+
+// Get current Shopify configuration
+app.get("/api/shopify/config", authenticateToken, async (req, res) => {
+  try {
+    const config = await ShopifyConfig.findOne({ isActive: true })
+      .populate("updatedBy", "name email")
+      .select("-accessToken"); // Don't send access token
+
+    if (!config) {
+      return res.json({
+        success: true,
+        config: null,
+      });
+    }
+
+    res.json({
+      success: true,
+      config,
+    });
+  } catch (error) {
+    console.error("Error fetching Shopify config:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch Shopify configuration",
+    });
+  }
+});
+
+// Sync products from Shopify
+app.post("/api/shopify/sync-products", authenticateToken, async (req, res) => {
+  try {
+    const { fullSync = false } = req.body;
+    let allProducts = [];
+    let hasNextPage = true;
+    let cursor = null;
+    let productsProcessed = 0;
+
+    console.log("Starting product sync from Shopify...");
+
+    while (hasNextPage) {
+      const variables = {
+        first: 50, // Shopify's max per request
+        ...(cursor && { after: cursor }),
+      };
+
+      const data = await shopifyGraphQL(GET_PRODUCTS_QUERY, variables);
+
+      if (!data || !data.products) {
+        break;
+      }
+
+      const products = data.products.edges.map((edge) => edge.node);
+      allProducts = allProducts.concat(products);
+
+      hasNextPage = data.products.pageInfo.hasNextPage;
+      cursor = data.products.pageInfo.endCursor;
+
+      productsProcessed += products.length;
+      console.log(`Fetched ${productsProcessed} products so far...`);
+    }
+
+    console.log(`Total products fetched: ${allProducts.length}`);
+
+    // Clear existing products if full sync
+    if (fullSync) {
+      await ShopifyProduct.deleteMany({});
+    }
+
+    // Process and save products
+    const savedProducts = [];
+
+    for (const shopifyProduct of allProducts) {
+      try {
+        const productData = {
+          shopifyId: shopifyProduct.id.replace("gid://shopify/Product/", ""),
+          title: shopifyProduct.title,
+          handle: shopifyProduct.handle,
+          description: shopifyProduct.description || "",
+          vendor: shopifyProduct.vendor || "",
+          productType: shopifyProduct.productType || "",
+          tags: shopifyProduct.tags || [],
+          status: shopifyProduct.status.toLowerCase(),
+          images: shopifyProduct.images.edges.map((edge) => ({
+            url: edge.node.url,
+            altText: edge.node.altText || "",
+          })),
+          variants: shopifyProduct.variants.edges.map((edge) => ({
+            shopifyVariantId: edge.node.id.replace(
+              "gid://shopify/ProductVariant/",
+              ""
+            ),
+            title: edge.node.title,
+            price: parseFloat(edge.node.price) || 0,
+            compareAtPrice: edge.node.compareAtPrice
+              ? parseFloat(edge.node.compareAtPrice)
+              : null,
+            sku: edge.node.sku || "",
+            inventory: edge.node.inventoryQuantity || 0,
+            weight: edge.node.weight || 0,
+            weightUnit: edge.node.weightUnit || "kg",
+          })),
+          options: shopifyProduct.options || [],
+          lastSynced: new Date(),
+        };
+
+        const existingProduct = await ShopifyProduct.findOne({
+          shopifyId: productData.shopifyId,
+        });
+
+        if (existingProduct) {
+          await ShopifyProduct.findOneAndUpdate(
+            { shopifyId: productData.shopifyId },
+            productData,
+            { new: true }
+          );
+        } else {
+          const newProduct = new ShopifyProduct(productData);
+          await newProduct.save();
+        }
+
+        savedProducts.push(productData);
+      } catch (error) {
+        console.error(`Error processing product ${shopifyProduct.id}:`, error);
+      }
+    }
+
+    // Update sync timestamp
+    await ShopifyConfig.findOneAndUpdate(
+      { isActive: true },
+      { lastSync: new Date() }
+    );
+
+    res.json({
+      success: true,
+      message: `Successfully synced ${savedProducts.length} products`,
+      totalProducts: savedProducts.length,
+      syncType: fullSync ? "full" : "incremental",
+    });
+  } catch (error) {
+    console.error("Error syncing products:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to sync products from Shopify",
+      error: error.message,
+    });
+  }
+});
+
+
+// Add new product to Shopify
+// Add new product to Shopify - CORRECTED VERSION
+app.post("/api/shopify/add-product", authenticateToken, upload.array('images', 5), async (req, res) => {
+  try {
+    console.log("Received product creation request");
+    console.log("Body:", req.body);
+    console.log("Files:", req.files);
+
+     const { 
+      title, 
+      description, 
+      productType, 
+      vendor, 
+      tags,
+      inventory,
+      weight,
+      seo,
+      metalConfig,
+      diamondConfig,
+      stoneConfig,
+      mediaUrls
+    } = req.body;
+
+    // Validation
+    if (!title || !title.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Product title is required"
+      });
+    }
+
+    // Parse JSON strings safely
+    let inventoryData = {};
+    let weightData = {};
+    let seoData = {};
+    let imageUrlsArray = [];
+
+    try {
+      inventoryData = inventory ? JSON.parse(inventory) : {};
+      weightData = weight ? JSON.parse(weight) : {};
+      seoData = seo ? JSON.parse(seo) : {};
+      imageUrlsArray = imageUrls ? JSON.parse(imageUrls) : [];
+    } catch (parseError) {
+      console.error("JSON parsing error:", parseError);
+      return res.status(400).json({
+        success: false,
+        message: "Invalid JSON data in request"
+      });
+    }
+
+    // Get Shopify configuration
+    const config = await ShopifyConfig.findOne({ isActive: true });
+    if (!config) {
+      return res.status(400).json({
+        success: false,
+        message: "Shopify configuration not found. Please configure Shopify first."
+      });
+    }
+
+    // Process images
+    const mediaArray = [];
+    
+    // Add image URLs
+    if (mediaUrls) {
+      const mediaUrlsArray = JSON.parse(mediaUrls);
+      mediaUrlsArray.forEach(mediaItem => {
+        if (mediaItem.url && mediaItem.url.trim()) {
+          if (mediaItem.type === 'video') {
+            // For videos, Shopify might need special handling or you might need to store them elsewhere
+            console.log("Video URL detected:", mediaItem.url);
+            // Add video handling logic here
+          } else {
+            mediaArray.push({
+              src: mediaItem.url.trim(),
+              alt: title
+            });
+          }
+        }
+      });
+    }
+
+    // For file uploads, we'll use placeholder URLs for now
+    if (req.files && req.files.length > 0) {
+      req.files.forEach(file => {
+        if (file.mimetype.startsWith('image/')) {
+          mediaArray.push({
+            src: `https://via.placeholder.com/400x400?text=${encodeURIComponent(title)}`,
+            alt: title
+          });
+        } else if (file.mimetype.startsWith('video/')) {
+          // Handle video uploads - you might need to upload to a video hosting service
+          console.log("Video file uploaded:", file.originalname);
+          // Add video file handling logic here
+        }
+      });
+    }
+
+    // Prepare tags array
+    const tagsArray = tags ? tags.split(',').map(tag => tag.trim()).filter(tag => tag) : [];
+
+    // Generate handle from title
+    const handle = (seoData.urlHandle || title)
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .trim();
+
+    // Convert weight unit to Shopify REST API format (lowercase)
+    const weightUnitMap = {
+      'kg': 'kg',
+      'g': 'g', 
+      'oz': 'oz',
+      'lb': 'lb'
+    };
+
+    const shopifyWeightUnit = weightUnitMap[weightData.unit] || 'kg';
+
+    // Create product using Shopify REST API
+    const productData = {
+      product: {
+        title: title.trim(),
+        body_html: description || '',
+        product_type: productType || '',
+        vendor: vendor || '',
+        tags: tagsArray.join(', '),
+        handle: handle,
+        status: 'active',
+        published: true,
+        images: mediaArray,
+        variants: [{
+          title: "Default Title",
+          price: "0.00", // Default price, will be calculated later
+          inventory_quantity: parseInt(inventoryData.quantity) || 0,
+          sku: inventoryData.sku || '',
+          barcode: inventoryData.barcode || '',
+          weight: parseFloat(weightData.value) || 0,
+          weight_unit: shopifyWeightUnit,
+          inventory_management: 'shopify',
+          inventory_policy: 'deny'
+        }],
+        options: [{
+          name: "Title",
+          values: ["Default Title"]
+        }]
+      }
+    };
+
+    // Add images if any
+    if (imageArray.length > 0) {
+      productData.product.images = imageArray;
+    }
+
+    console.log("Sending to Shopify REST API:", JSON.stringify(productData, null, 2));
+
+    const response = await axios.post(
+      `https://${config.storeUrl}/admin/api/${config.apiVersion || '2024-01'}/products.json`,
+      productData,
+      {
+        headers: {
+          "X-Shopify-Access-Token": config.accessToken,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const createdProduct = response.data.product;
+    console.log("Product created successfully:", createdProduct.id);
+
+    // Update SEO if provided
+    if (seoData.pageTitle || seoData.metaDescription) {
+      try {
+        const seoUpdateData = {
+          product: {
+            id: createdProduct.id,
+            metafields: []
+          }
+        };
+
+        if (seoData.pageTitle) {
+          seoUpdateData.product.metafields.push({
+            namespace: "seo",
+            key: "title_tag",
+            value: seoData.pageTitle,
+            type: "single_line_text_field"
+          });
+        }
+
+        if (seoData.metaDescription) {
+          seoUpdateData.product.metafields.push({
+            namespace: "seo", 
+            key: "description_tag",
+            value: seoData.metaDescription,
+            type: "multi_line_text_field"
+          });
+        }
+
+        // Update product with SEO data
+        await axios.put(
+          `https://${config.storeUrl}/admin/api/${config.apiVersion || '2024-01'}/products/${createdProduct.id}.json`,
+          seoUpdateData,
+          {
+            headers: {
+              "X-Shopify-Access-Token": config.accessToken,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+      } catch (seoError) {
+        console.error("Error updating SEO data:", seoError);
+        // Continue even if SEO update fails
+      }
+    }
+
+    res.json({
+      success: true,
+      message: "Product created successfully in Shopify",
+      product: {
+        id: createdProduct.id,
+        title: createdProduct.title,
+        handle: createdProduct.handle,
+        status: createdProduct.status
+      },
+      shopifyUrl: `https://${config.storeUrl.replace('.myshopify.com', '')}.myshopify.com/admin/products/${createdProduct.id}`
+    });
+
+  } catch (error) {
+    console.error("Error creating product:", error);
+    console.error("Error response:", error.response?.data);
+    
+    // Handle specific Shopify API errors
+    let errorMessage = "Failed to create product";
+    if (error.response?.data?.errors) {
+      const shopifyErrors = error.response.data.errors;
+      if (typeof shopifyErrors === 'object') {
+        errorMessage = Object.entries(shopifyErrors)
+          .map(([field, messages]) => `${field}: ${Array.isArray(messages) ? messages.join(', ') : messages}`)
+          .join('; ');
+      } else {
+        errorMessage = shopifyErrors;
+      }
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: errorMessage,
+      error: error.message,
+      details: error.response?.data || "No additional details"
+    });
+  }
+});
+
+
+// Get products (with pagination and filtering)
+app.get("/api/shopify/products", authenticateToken, async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      search = "",
+      status = "",
+      vendor = "",
+      productType = "",
+    } = req.query;
+
+    const skip = (page - 1) * limit;
+    const query = {};
+
+    // Build search query
+    if (search) {
+      query.$or = [
+        { title: { $regex: search, $options: "i" } },
+        { handle: { $regex: search, $options: "i" } },
+        { vendor: { $regex: search, $options: "i" } },
+        { tags: { $in: [new RegExp(search, "i")] } },
+      ];
+    }
+
+    if (status) query.status = status;
+    if (vendor) query.vendor = vendor;
+    if (productType) query.productType = productType;
+
+    const products = await ShopifyProduct.find(query)
+      .sort({ updatedAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await ShopifyProduct.countDocuments(query);
+
+    // Get filter options
+    const vendors = await ShopifyProduct.distinct("vendor");
+    const productTypes = await ShopifyProduct.distinct("productType");
+    const statuses = await ShopifyProduct.distinct("status");
+
+    res.json({
+      success: true,
+      products,
+      pagination: {
+        current: parseInt(page),
+        total: Math.ceil(total / limit),
+        totalProducts: total,
+        hasNext: skip + products.length < total,
+        hasPrev: page > 1,
+      },
+      filters: {
+        vendors: vendors.filter(Boolean),
+        productTypes: productTypes.filter(Boolean),
+        statuses,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching products:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch products",
+      error: error.message,
+    });
+  }
+});
+
+// Get single product
+app.get("/api/shopify/products/:id", authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const product = await ShopifyProduct.findOne({
+      $or: [{ _id: id }, { shopifyId: id }],
+    });
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      product,
+    });
+  } catch (error) {
+    console.error("Error fetching product:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch product",
+      error: error.message,
+    });
+  }
+});
+
+// Update product in Shopify
+app.put("/api/shopify/products/:id", authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+
+    // Find local product
+    const local = await ShopifyProduct.findOne({
+      $or: [{ _id: id }, { shopifyId: id }],
+    });
+
+    if (!local) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
+    }
+
+    // Update in Shopify
+    const shopifyInput = {
+      id: `gid://shopify/Product/${local.shopifyId}`,
+      title: updateData.title,
+      description: updateData.description,
+      vendor: updateData.vendor,
+      productType: updateData.productType,
+      tags: updateData.tags,
+      status: updateData.status?.toUpperCase(),
+    };
+
+    const result = await shopifyGraphQL(UPDATE_PRODUCT_MUTATION, {
+      input: shopifyInput,
+    });
+
+    if (result.productUpdate.userErrors?.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Failed to update product in Shopify",
+        errors: result.productUpdate.userErrors,
+      });
+    }
+
+    // Update local database
+    const updated = await ShopifyProduct.findOneAndUpdate(
+      { _id: local._id },
+      {
+        ...updateData,
+        lastSynced: new Date(),
+      },
+      { new: true }
+    );
+
+    res.json({
+      success: true,
+      message: "Product updated successfully",
+      product: updated,
+    });
+  } catch (error) {
+    console.error("Error updating product:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update product",
+      error: error.message,
+    });
+  }
+});
+
+// Get sync status
+app.get("/api/shopify/sync-status", authenticateToken, async (req, res) => {
+  try {
+    const config = await ShopifyConfig.findOne({ isActive: true });
+    const productCount = await ShopifyProduct.countDocuments();
+
+    res.json({
+      success: true,
+      status: {
+        isConfigured: !!config,
+        lastSync: config?.lastSync,
+        productCount,
+        storeUrl: config?.storeUrl,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching sync status:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch sync status",
+    });
+  }
+});
 
 mongoose
   .connect(process.env.MONGODB_URI)

@@ -1,5 +1,18 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Edit, LogOut, Upload, X } from "lucide-react";
+import {
+  Edit,
+  LogOut,
+  Upload,
+  X,
+  RefreshCw,
+  Settings,
+  Eye,
+  Search,
+  Filter,
+  Plus,
+  Download,
+  Trash2,
+} from "lucide-react";
 import axios from "axios";
 
 const AccordionSection = ({
@@ -60,6 +73,432 @@ const AccordionSection = ({
   </div>
 );
 
+const ProductCard = ({ product, onEdit, onView, onSelect, isSelected }) => {
+  const mainImage =
+    product.images?.[0]?.url ||
+    "https://media.istockphoto.com/id/1147544807/vector/thumbnail-image-vector-graphic.jpg?s=612x612&w=0&k=20&c=rnCKVbdxqkjlcs3xH87-9gocETqpspHFXu5dIGB4wuM=";
+  const mainVariant = product.variants?.[0] || {};
+
+  return (
+    <div
+      className={`bg-white rounded-xl border-2 transition-all duration-200 hover:shadow-lg ${
+        isSelected
+          ? "border-blue-500 bg-blue-50"
+          : "border-gray-200 hover:border-gray-300"
+      }`}
+    >
+      <div className="p-4">
+        {/* Header with checkbox and status */}
+        <div className="flex items-start justify-between mb-3">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => onSelect(product._id)}
+            className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mt-1"
+          />
+          <span
+            className={`px-2 py-1 text-xs font-medium rounded-full ${
+              product.status === "active"
+                ? "bg-green-100 text-green-800"
+                : product.status === "draft"
+                ? "bg-yellow-100 text-yellow-800"
+                : "bg-gray-100 text-gray-800"
+            }`}
+          >
+            {product.status}
+          </span>
+        </div>
+
+        {/* Product Image */}
+        <div className="aspect-square mb-3 overflow-hidden rounded-lg bg-gray-100">
+          <img
+            src={mainImage}
+            alt={product.title}
+            className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+          />
+        </div>
+
+        {/* Product Info */}
+        <div className="space-y-2">
+          <h3 className="font-semibold text-gray-900 line-clamp-2 min-h-[2.5rem]">
+            {product.title}
+          </h3>
+
+          <div className="text-sm text-gray-600">
+            {product.vendor && (
+              <p>
+                <span className="font-medium">Vendor:</span> {product.vendor}
+              </p>
+            )}
+            {product.productType && (
+              <p>
+                <span className="font-medium">Type:</span> {product.productType}
+              </p>
+            )}
+          </div>
+
+          {/* Price */}
+          {mainVariant.price && (
+            <div className="text-lg font-bold text-gray-900">
+              ₹{mainVariant.price.toLocaleString()}
+              {mainVariant.compareAtPrice &&
+                mainVariant.compareAtPrice > mainVariant.price && (
+                  <span className="text-sm font-normal text-gray-500 line-through ml-2">
+                    ₹{mainVariant.compareAtPrice.toLocaleString()}
+                  </span>
+                )}
+            </div>
+          )}
+
+          {/* Variants count */}
+          {product.variants && product.variants.length > 1 && (
+            <p className="text-sm text-blue-600">
+              {product.variants.length} variants
+            </p>
+          )}
+
+          {/* Tags */}
+          {product.tags && product.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {product.tags.slice(0, 3).map((tag, index) => (
+                <span
+                  key={index}
+                  className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded"
+                >
+                  {tag}
+                </span>
+              ))}
+              {product.tags.length > 3 && (
+                <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">
+                  +{product.tags.length - 3}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={() => onView(product)}
+              className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors flex items-center justify-center gap-1"
+            >
+              <Eye size={14} />
+              View
+            </button>
+            <button
+              onClick={() => onEdit(product)}
+              className="px-3 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded-lg transition-colors"
+            >
+              <Edit size={14} />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ProductModal = ({
+  product,
+  isOpen,
+  onClose,
+  onSave,
+  isEditing = false,
+}) => {
+  const [formData, setFormData] = useState({
+    title: "",
+    description: "",
+    vendor: "",
+    productType: "",
+    status: "active",
+    tags: [],
+  });
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (product && isOpen) {
+      setFormData({
+        title: product.title || "",
+        description: product.description || "",
+        vendor: product.vendor || "",
+        productType: product.productType || "",
+        status: product.status || "active",
+        tags: product.tags || [],
+      });
+    }
+  }, [product, isOpen]);
+
+  const handleSave = async () => {
+    try {
+      setIsSaving(true);
+      await onSave(product._id, formData);
+      onClose();
+    } catch (error) {
+      console.error("Error saving product:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (!isOpen || !product) return null;
+
+  const mainImage =
+    product.images?.[0]?.url ||
+    "https://media.istockphoto.com/id/1147544807/vector/thumbnail-image-vector-graphic.jpg?s=612x612&w=0&k=20&c=rnCKVbdxqkjlcs3xH87-9gocETqpspHFXu5dIGB4wuM=";
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+        <div className="flex items-center justify-between p-6 border-b">
+          <h3 className="text-xl font-bold text-gray-900">
+            {isEditing ? "Edit Product" : "Product Details"}
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <X size={24} />
+          </button>
+        </div>
+
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Product Image */}
+            <div>
+              <div className="aspect-square rounded-lg overflow-hidden bg-gray-100 mb-4">
+                <img
+                  src={mainImage}
+                  alt={product.title}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              {product.images && product.images.length > 1 && (
+                <div className="grid grid-cols-4 gap-2">
+                  {product.images.slice(1, 5).map((image, index) => (
+                    <div
+                      key={index}
+                      className="aspect-square rounded-lg overflow-hidden bg-gray-100"
+                    >
+                      <img
+                        src={image.url}
+                        alt={`${product.title} ${index + 2}`}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Product Details Form */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Product Title
+                </label>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={formData.title}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        title: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                ) : (
+                  <p className="text-gray-900 font-semibold">{product.title}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Description
+                </label>
+                {isEditing ? (
+                  <textarea
+                    value={formData.description}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        description: e.target.value,
+                      }))
+                    }
+                    rows={4}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                ) : (
+                  <p className="text-gray-700">
+                    {product.description || "No description"}
+                  </p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Vendor
+                  </label>
+                  {isEditing ? (
+                    <input
+                      type="text"
+                      value={formData.vendor}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          vendor: e.target.value,
+                        }))
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  ) : (
+                    <p className="text-gray-900">
+                      {product.vendor || "Not specified"}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Product Type
+                  </label>
+                  {isEditing ? (
+                    <input
+                      type="text"
+                      value={formData.productType}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          productType: e.target.value,
+                        }))
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  ) : (
+                    <p className="text-gray-900">
+                      {product.productType || "Not specified"}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Status
+                </label>
+                {isEditing ? (
+                  <select
+                    value={formData.status}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        status: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="active">Active</option>
+                    <option value="draft">Draft</option>
+                    <option value="archived">Archived</option>
+                  </select>
+                ) : (
+                  <span
+                    className={`px-3 py-1 text-sm font-medium rounded-full ${
+                      product.status === "active"
+                        ? "bg-green-100 text-green-800"
+                        : product.status === "draft"
+                        ? "bg-yellow-100 text-yellow-800"
+                        : "bg-gray-100 text-gray-800"
+                    }`}
+                  >
+                    {product.status}
+                  </span>
+                )}
+              </div>
+
+              {/* Variants */}
+              {product.variants && product.variants.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Variants ({product.variants.length})
+                  </label>
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {product.variants.map((variant, index) => (
+                      <div key={index} className="bg-gray-50 p-3 rounded-lg">
+                        <p className="font-medium">{variant.title}</p>
+                        <div className="text-sm text-gray-600 grid grid-cols-2 gap-2 mt-1">
+                          <span>Price: ₹{variant.price}</span>
+                          <span>SKU: {variant.sku || "N/A"}</span>
+                          <span>Inventory: {variant.inventory}</span>
+                          <span>
+                            Weight: {variant.weight} {variant.weightUnit}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Tags */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Tags
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {(product.tags || []).map((tag, index) => (
+                    <span
+                      key={index}
+                      className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Shopify Info */}
+              <div className="border-t pt-4">
+                <h4 className="font-medium text-gray-900 mb-2">
+                  Shopify Information
+                </h4>
+                <div className="text-sm text-gray-600 space-y-1">
+                  <p>Shopify ID: {product.shopifyId}</p>
+                  <p>Handle: {product.handle}</p>
+                  <p>
+                    Last Synced: {new Date(product.lastSynced).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end space-x-3 p-6 border-t bg-gray-50">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            {isEditing ? "Cancel" : "Close"}
+          </button>
+          {isEditing && (
+            <button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-lg transition-colors"
+            >
+              {isSaving ? "Saving..." : "Save Changes"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Dashboard = ({ user, onLogout }) => {
   const [logoUrl, setLogoUrl] = useState(
     "https://www.shutterstock.com/image-vector/vector-icon-demo-600nw-1148418773.jpg"
@@ -85,8 +524,57 @@ const Dashboard = ({ user, onLogout }) => {
     return localStorage.getItem("activeMainTab") || "products";
   });
   const [activeConfigTab, setActiveConfigTab] = useState(() => {
-    return localStorage.getItem("activeConfigTab") || "rate-charts";
+    return localStorage.getItem("activeConfigTab") || "shopify-config";
   });
+
+  // Shopify States
+  const [shopifyConfig, setShopifyConfig] = useState(null);
+  const [isShopifyConfigured, setIsShopifyConfigured] = useState(false);
+  const [shopifyProducts, setShopifyProducts] = useState([]);
+  const [productFilters, setProductFilters] = useState({
+    vendors: [],
+    productTypes: [],
+    statuses: ["active", "draft", "archived"],
+  });
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState("");
+  const [selectedVendor, setSelectedVendor] = useState("");
+  const [selectedProductType, setSelectedProductType] = useState("");
+  const [pagination, setPagination] = useState({
+    current: 1,
+    total: 1,
+    totalProducts: 0,
+    hasNext: false,
+    hasPrev: false,
+  });
+  const [syncStatus, setSyncStatus] = useState({
+    isConfigured: false,
+    lastSync: null,
+    productCount: 0,
+    storeUrl: "",
+  });
+  const [selectedProducts, setSelectedProducts] = useState([]);
+  const [selectAll, setSelectAll] = useState(false);
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [currentProduct, setCurrentProduct] = useState(null);
+  const [isEditingProduct, setIsEditingProduct] = useState(false);
+  const [productAnalytics, setProductAnalytics] = useState({
+    totalProducts: 0,
+    activeProducts: 0,
+    draftProducts: 0,
+    archivedProducts: 0,
+    topVendors: [],
+    lastSync: null,
+    isConfigured: false,
+  });
+
+  // Shopify Configuration States
+  const [shopifyConfigForm, setShopifyConfigForm] = useState({
+    storeUrl: "",
+    accessToken: "",
+    apiVersion: "2024-01",
+  });
+  const [isConfiguringShopify, setIsConfiguringShopify] = useState(false);
 
   const [diamondPrices, setDiamondPrices] = useState([]);
   const [newDiamondPrice, setNewDiamondPrice] = useState({
@@ -151,65 +639,693 @@ const Dashboard = ({ user, onLogout }) => {
   const [isBulkDeletingMakingCharges, setIsBulkDeletingMakingCharges] =
     useState(false);
 
+  //AddProduct
+
+  const [showAddProductModal, setShowAddProductModal] = useState(false);
+  const [isAddingProduct, setIsAddingProduct] = useState(false);
+  // Change this in your state initialization
+  // Update your initial state to include stoneConfig as an array
+  const [newProductForm, setNewProductForm] = useState({
+    title: "",
+    description: "",
+    productType: "",
+    vendor: "",
+    tags: "",
+    media: [
+      { type: "upload", file: null, url: "", preview: "", mediaType: "image" },
+    ],
+    inventory: {
+      quantity: "",
+      sku: "",
+      barcode: "",
+    },
+    weight: {
+      value: "",
+      unit: "kg",
+    },
+    seo: {
+      pageTitle: "",
+      metaDescription: "",
+      urlHandle: "",
+    },
+    metalConfig: {},
+    diamondConfig: [],
+    stoneConfig: [], // Changed from {} to []
+  });
+
+  // Initial data loading
   useEffect(() => {
     fetchMetalPrices();
-  }, []);
-
-  useEffect(() => {
     fetchMmToCtData();
-  }, []);
-
-  useEffect(() => {
     fetchCurrentLogo();
+    fetchMakingCharges();
+    fetchMinimumMakingCharge();
+    fetchDiamondPrices();
+    fetchStonePrices();
+    loadLivePricesFromStorage();
+
+    // Shopify initial load
+    fetchShopifyConfig();
+    fetchSyncStatus();
   }, []);
 
   useEffect(() => {
     localStorage.setItem("activeMainTab", activeMainTab);
   }, [activeMainTab]);
+
   useEffect(() => {
     localStorage.setItem("activeConfigTab", activeConfigTab);
   }, [activeConfigTab]);
 
+  // Load products when main tab changes to products
   useEffect(() => {
-    fetchMakingCharges();
+    if (activeMainTab === "products") {
+      fetchShopifyProducts();
+      fetchProductAnalytics();
+    }
+  }, [
+    activeMainTab,
+    searchTerm,
+    selectedStatus,
+    selectedVendor,
+    selectedProductType,
+    pagination.current,
+  ]);
+
+  // Load products when main tab changes to products
+  useEffect(() => {
+    if (activeMainTab === "products" && isShopifyConfigured) {
+      fetchShopifyProducts();
+      fetchProductAnalytics();
+    } else if (activeMainTab === "products" && !isShopifyConfigured) {
+      // Set empty analytics if not configured
+      setProductAnalytics({
+        totalProducts: 0,
+        activeProducts: 0,
+        draftProducts: 0,
+        archivedProducts: 0,
+        topVendors: [],
+        lastSync: null,
+        isConfigured: false,
+      });
+    }
+  }, [activeMainTab, isShopifyConfigured]);
+
+  // Also fetch analytics after successful sync
+  const syncShopifyProducts = async (fullSync = false) => {
+    if (!isShopifyConfigured) {
+      alert("Please configure Shopify first");
+      return;
+    }
+
+    try {
+      setIsSyncing(true);
+      const token = localStorage.getItem("token");
+      const response = await axios.post(
+        "http://localhost:5000/api/shopify/sync-products",
+        { fullSync },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (response.data.success) {
+        alert(`Successfully synced ${response.data.totalProducts} products!`);
+        await fetchShopifyProducts();
+        await fetchSyncStatus();
+        await fetchProductAnalytics(); // Add this line
+      }
+    } catch (error) {
+      console.error("Error syncing products:", error);
+      alert(error.response?.data?.message || "Failed to sync products");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Shopify API Functions
+  const fetchShopifyConfig = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.get(
+        "http://localhost:5000/api/shopify/config",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (response.data.success && response.data.config) {
+        setShopifyConfig(response.data.config);
+        setIsShopifyConfigured(true);
+        setShopifyConfigForm({
+          storeUrl: response.data.config.storeUrl,
+          accessToken: "", // Don't populate for security
+          apiVersion: response.data.config.apiVersion,
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching Shopify config:", error);
+    }
+  };
+
+  const saveShopifyConfig = async () => {
+    if (!shopifyConfigForm.storeUrl || !shopifyConfigForm.accessToken) {
+      alert("Please fill in all required fields");
+      return;
+    }
+
+    // Debug: Log the data being sent
+    console.log("Sending Shopify config:", {
+      storeUrl: shopifyConfigForm.storeUrl,
+      accessToken: shopifyConfigForm.accessToken ? "***HIDDEN***" : "EMPTY",
+      apiVersion: shopifyConfigForm.apiVersion,
+    });
+
+    try {
+      setIsConfiguringShopify(true);
+      const token = localStorage.getItem("token");
+
+      // Debug: Check if token exists
+      console.log("Auth token exists:", !!token);
+
+      const response = await axios.post(
+        "http://localhost:5000/api/shopify/config",
+        shopifyConfigForm,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (response.data.success) {
+        alert("Shopify configuration saved successfully!");
+        await fetchShopifyConfig();
+        await fetchSyncStatus();
+
+        // Clear access token from form for security
+        setShopifyConfigForm((prev) => ({ ...prev, accessToken: "" }));
+      }
+    } catch (error) {
+      console.error("Error saving Shopify config:", error);
+
+      // Debug: Log more detailed error info
+      if (error.response) {
+        console.log("Error status:", error.response.status);
+        console.log("Error data:", error.response.data);
+        console.log("Error headers:", error.response.headers);
+      }
+
+      alert(
+        error.response?.data?.message || "Failed to configure Shopify store"
+      );
+    } finally {
+      setIsConfiguringShopify(false);
+    }
+  };
+
+  const fetchSyncStatus = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.get(
+        "http://localhost:5000/api/shopify/sync-status",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (response.data.success) {
+        setSyncStatus(response.data.status);
+      }
+    } catch (error) {
+      console.error("Error fetching sync status:", error);
+    }
+  };
+
+  const fetchShopifyProducts = async (page = 1) => {
+    try {
+      setIsLoading(true);
+      const token = localStorage.getItem("token");
+
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: "12",
+        ...(searchTerm && { search: searchTerm }),
+        ...(selectedStatus && { status: selectedStatus }),
+        ...(selectedVendor && { vendor: selectedVendor }),
+        ...(selectedProductType && { productType: selectedProductType }),
+      });
+
+      const response = await axios.get(
+        `http://localhost:5000/api/shopify/products?${params}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (response.data.success) {
+        setShopifyProducts(response.data.products);
+        setPagination(response.data.pagination);
+        setProductFilters(response.data.filters);
+      }
+    } catch (error) {
+      console.error("Error fetching products:", error);
+      if (
+        error.response?.status === 404 ||
+        error.response?.data?.message?.includes(
+          "No active Shopify configuration"
+        )
+      ) {
+        setShopifyProducts([]);
+        setPagination({
+          current: 1,
+          total: 1,
+          totalProducts: 0,
+          hasNext: false,
+          hasPrev: false,
+        });
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchProductAnalytics = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.get(
+        "http://localhost:5000/api/shopify/analytics",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (response.data.success) {
+        setProductAnalytics(response.data.analytics);
+      }
+    } catch (error) {
+      console.error("Error fetching analytics:", error);
+      // Set default values if API call fails
+      setProductAnalytics({
+        totalProducts: 0,
+        activeProducts: 0,
+        draftProducts: 0,
+        archivedProducts: 0,
+        topVendors: [],
+        lastSync: null,
+        isConfigured: false,
+      });
+    }
+  };
+
+  const handleProductView = (product) => {
+    setCurrentProduct(product);
+    setIsEditingProduct(false);
+    setShowProductModal(true);
+  };
+
+  const handleProductEdit = (product) => {
+    setCurrentProduct(product);
+    setIsEditingProduct(true);
+    setShowProductModal(true);
+  };
+
+  const handleProductSave = async (productId, formData) => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.put(
+        `http://localhost:5000/api/shopify/products/${productId}`,
+        formData,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (response.data.success) {
+        alert("Product updated successfully!");
+        await fetchShopifyProducts(pagination.current);
+      }
+    } catch (error) {
+      console.error("Error updating product:", error);
+      alert(error.response?.data?.message || "Failed to update product");
+    }
+  };
+
+  const handleProductSelect = (productId) => {
+    setSelectedProducts((prev) => {
+      if (prev.includes(productId)) {
+        return prev.filter((id) => id !== productId);
+      } else {
+        return [...prev, productId];
+      }
+    });
+  };
+
+  const handleSelectAllProducts = () => {
+    if (selectAll) {
+      setSelectedProducts([]);
+    } else {
+      setSelectedProducts(shopifyProducts.map((product) => product._id));
+    }
+    setSelectAll(!selectAll);
+  };
+
+  const bulkUpdateProducts = async (updateData) => {
+    if (selectedProducts.length === 0) {
+      alert("Please select products to update");
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const token = localStorage.getItem("token");
+      const response = await axios.post(
+        "http://localhost:5000/api/shopify/products/bulk-update",
+        {
+          productIds: selectedProducts,
+          updateData,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (response.data.success) {
+        alert(response.data.message);
+        setSelectedProducts([]);
+        setSelectAll(false);
+        await fetchShopifyProducts(pagination.current);
+      }
+    } catch (error) {
+      console.error("Error bulk updating products:", error);
+      alert(error.response?.data?.message || "Failed to update products");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Search debounce
+  const debouncedSearch = useCallback(
+    debounce((term) => {
+      setSearchTerm(term);
+      setPagination((prev) => ({ ...prev, current: 1 }));
+    }, 500),
+    []
+  );
+
+  // Debounce utility
+  function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+      const later = () => {
+        clearTimeout(timeout);
+        func(...args);
+      };
+      clearTimeout(timeout);
+      timeout = setTimeout(later, wait);
+    };
+  }
+
+  // Existing functions (keeping all your original functions)
+  const fetchMetalPrices = async () => {
+    try {
+      setIsLoading(true);
+      const response = await axios.get(
+        "http://localhost:5000/api/metal-prices"
+      );
+      if (response.data.success) {
+        setMetalPrices(response.data.metalPrices);
+      }
+    } catch (error) {
+      console.error("Error fetching metal prices:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handlePriceChange = useCallback((metal, value) => {
+    setMetalPrices((prev) => ({
+      ...prev,
+      [metal]: parseFloat(value) || 0,
+    }));
   }, []);
 
-  useEffect(() => {
-    fetchMinimumMakingCharge();
-  }, []);
+  const savePrices = async () => {
+    try {
+      setIsLoading(true);
+      const token = localStorage.getItem("token");
+      const response = await axios.put(
+        "http://localhost:5000/api/metal-prices",
+        metalPrices,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
 
-  useEffect(() => {
-    const fetchLastUpdate = async () => {
-      try {
-        const response = await axios.get(
-          "http://localhost:5000/api/metal-prices"
+      if (response.data.success) {
+        alert("Prices updated successfully!");
+        fetchMetalPrices();
+
+        setLastUpdate({
+          updatedBy: user?.name || "Admin",
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    } catch (error) {
+      console.error("Error updating prices:", error);
+      alert("Error updating prices. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchLivePrices = async () => {
+    setIsFetchingLive(true);
+    try {
+      const response = await fetch(
+        "http://localhost:5000/api/metal-prices/live",
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.success) {
+        setLivePrices(data.livePrices);
+        setLastUpdated(data.lastUpdated);
+        setLiveDataSource(data.source);
+
+        saveLivePricesToStorage(data.livePrices, data.lastUpdated, data.source);
+
+        alert("Live prices fetched successfully!");
+      } else {
+        alert(data.message || "Failed to fetch live prices");
+      }
+    } catch (error) {
+      console.error("Error fetching live prices:", error);
+      alert("Failed to fetch live prices. Please try again.");
+    } finally {
+      setIsFetchingLive(false);
+    }
+  };
+
+  const syncLivePrices = async () => {
+    setIsSyncing(true);
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(
+        "http://localhost:5000/api/metal-prices/sync-live",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.success) {
+        setMetalPrices({
+          gold24K: data.metalPrices.gold24K,
+          gold22K: data.metalPrices.gold22K,
+          gold18K: data.metalPrices.gold18K,
+          gold14K: data.metalPrices.gold14K,
+          silver: data.metalPrices.silver,
+        });
+
+        setLivePrices(data.livePrices);
+        setLastUpdated(data.syncedAt);
+        setLiveDataSource("GoldAPI.io (Synced)");
+
+        saveLivePricesToStorage(
+          data.livePrices,
+          data.syncedAt,
+          "GoldAPI.io (Synced)"
         );
-        if (response.data.success && response.data.metalPrices) {
-          setLastUpdate({
-            updatedBy: response.data.metalPrices.updatedBy?.name || "Admin",
-            updatedAt: response.data.metalPrices.updatedAt,
-          });
+
+        alert("Prices synced successfully from live market data!");
+      } else {
+        alert(data.message || "Failed to sync live prices");
+      }
+    } catch (error) {
+      console.error("Error syncing live prices:", error);
+      alert("Failed to sync live prices. Please try again.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const saveLivePricesToStorage = (prices, timestamp, source) => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.LIVE_PRICES, JSON.stringify(prices));
+      localStorage.setItem(STORAGE_KEYS.LAST_UPDATED, timestamp);
+      localStorage.setItem(STORAGE_KEYS.LIVE_DATA_SOURCE, source);
+    } catch (error) {
+      console.error("Error saving live prices to localStorage:", error);
+    }
+  };
+
+  const loadLivePricesFromStorage = () => {
+    try {
+      const savedPrices = localStorage.getItem(STORAGE_KEYS.LIVE_PRICES);
+      const savedTimestamp = localStorage.getItem(STORAGE_KEYS.LAST_UPDATED);
+      const savedSource = localStorage.getItem(STORAGE_KEYS.LIVE_DATA_SOURCE);
+
+      if (savedPrices) {
+        const parsedPrices = JSON.parse(savedPrices);
+
+        if (
+          parsedPrices &&
+          typeof parsedPrices === "object" &&
+          (parsedPrices.gold24K || parsedPrices.silver)
+        ) {
+          setLivePrices(parsedPrices);
+        } else {
+          localStorage.removeItem(STORAGE_KEYS.LIVE_PRICES);
+        }
+      }
+
+      if (savedTimestamp) {
+        const timestamp = new Date(savedTimestamp);
+        const now = new Date();
+        const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+        if (timestamp >= oneWeekAgo && timestamp <= now) {
+          setLastUpdated(savedTimestamp);
+        } else {
+          localStorage.removeItem(STORAGE_KEYS.LAST_UPDATED);
+        }
+      }
+
+      if (savedSource) {
+        setLiveDataSource(savedSource);
+      }
+    } catch (error) {
+      console.error("Error loading live prices from localStorage:", error);
+      localStorage.removeItem(STORAGE_KEYS.LIVE_PRICES);
+      localStorage.removeItem(STORAGE_KEYS.LAST_UPDATED);
+      localStorage.removeItem(STORAGE_KEYS.LIVE_DATA_SOURCE);
+    }
+  };
+
+  const fetchCurrentLogo = async () => {
+    try {
+      const response = await axios.get("http://localhost:5000/api/logo");
+      if (response.data.logoUrl) {
+        setLogoUrl(response.data.logoUrl);
+      }
+    } catch (error) {
+      console.error("Error fetching logo:", error);
+    }
+  };
+
+  const handleLogout = () => {
+    if (window.confirm("Are you sure you want to logout?")) {
+      onLogout();
+    }
+  };
+
+  const handleLogoEdit = () => {
+    setShowLogoModal(true);
+  };
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.type.startsWith("image/")) {
+        if (file.size <= 5 * 1024 * 1024) {
+          setSelectedImage(file);
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            setPreviewUrl(e.target.result);
+          };
+          reader.readAsDataURL(file);
+        } else {
+          alert("File size must be less than 5MB");
+        }
+      } else {
+        alert("Please select an image file");
+      }
+    }
+  };
+
+  const handleLogoUpload = async () => {
+    if (selectedImage) {
+      const formData = new FormData();
+      formData.append("logo", selectedImage);
+
+      try {
+        const token = localStorage.getItem("token");
+        const response = await axios.post(
+          "http://localhost:5000/api/upload/logo",
+          formData,
+          {
+            headers: {
+              "Content-Type": "multipart/form-data",
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (response.data.logoUrl) {
+          setLogoUrl(response.data.logoUrl);
+          setShowLogoModal(false);
+          setSelectedImage(null);
+          setPreviewUrl(null);
+          alert("Logo updated successfully!");
         }
       } catch (error) {
-        console.error("Error fetching last update info:", error);
+        console.error("Error uploading logo:", error);
+        alert("Error uploading logo. Please try again.");
       }
-    };
+    }
+  };
 
-    fetchLastUpdate();
-  }, []);
+  const handleModalClose = () => {
+    setShowLogoModal(false);
+    setSelectedImage(null);
+    setPreviewUrl(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
 
-  useEffect(() => {
-    fetchDiamondPrices();
-  }, []);
+  const triggerFileInput = () => {
+    fileInputRef.current?.click();
+  };
 
-  useEffect(() => {
-    fetchStonePrices();
-  }, []);
+  const toggleAccordion = (section) => {
+    setActiveAccordion(activeAccordion === section ? null : section);
+  };
 
-  useEffect(() => {
-    // Load live prices from localStorage on component mount
-    loadLivePricesFromStorage();
-  }, []);
+  // Existing Diamond, Stone, MmToCt, and Making Charges functions
+  // (Include all your existing functions here - keeping the code the same)
 
   const fetchDiamondPrices = async () => {
     try {
@@ -254,6 +1370,11 @@ const Dashboard = ({ user, onLogout }) => {
       parseFloat(newDiamondPrice.weightTo)
     ) {
       alert("Weight 'From' must be less than weight 'To'");
+      return;
+    }
+
+    if (parseFloat(newDiamondPrice.pricePerCarat) <= 0) {
+      alert("Price per carat must be greater than 0.");
       return;
     }
 
@@ -372,316 +1493,6 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
-  const loadLivePricesFromStorage = () => {
-    try {
-      const savedPrices = localStorage.getItem(STORAGE_KEYS.LIVE_PRICES);
-      const savedTimestamp = localStorage.getItem(STORAGE_KEYS.LAST_UPDATED);
-      const savedSource = localStorage.getItem(STORAGE_KEYS.LIVE_DATA_SOURCE);
-
-      if (savedPrices) {
-        const parsedPrices = JSON.parse(savedPrices);
-
-        // Validate that prices object has expected properties
-        if (
-          parsedPrices &&
-          typeof parsedPrices === "object" &&
-          (parsedPrices.gold24K || parsedPrices.silver)
-        ) {
-          setLivePrices(parsedPrices);
-
-          // console.log("Valid live prices loaded from storage");
-        } else {
-          console.warn("Invalid price data found in storage, clearing...");
-          localStorage.removeItem(STORAGE_KEYS.LIVE_PRICES);
-        }
-      }
-
-      if (savedTimestamp) {
-        // Validate timestamp is reasonable (not too old, not in future)
-        const timestamp = new Date(savedTimestamp);
-        const now = new Date();
-        const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-
-        if (timestamp >= oneWeekAgo && timestamp <= now) {
-          setLastUpdated(savedTimestamp);
-        } else {
-          console.warn("Timestamp too old or invalid, clearing...");
-          localStorage.removeItem(STORAGE_KEYS.LAST_UPDATED);
-        }
-      }
-
-      if (savedSource) {
-        setLiveDataSource(savedSource);
-      }
-    } catch (error) {
-      console.error("Error loading live prices from localStorage:", error);
-      // Clear potentially corrupted data
-      localStorage.removeItem(STORAGE_KEYS.LIVE_PRICES);
-      localStorage.removeItem(STORAGE_KEYS.LAST_UPDATED);
-      localStorage.removeItem(STORAGE_KEYS.LIVE_DATA_SOURCE);
-    }
-  };
-
-  const fetchMetalPrices = async () => {
-    try {
-      setIsLoading(true);
-      const response = await axios.get(
-        "http://localhost:5000/api/metal-prices"
-      );
-      if (response.data.success) {
-        setMetalPrices(response.data.metalPrices);
-      }
-    } catch (error) {
-      console.error("Error fetching metal prices:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handlePriceChange = useCallback((metal, value) => {
-    setMetalPrices((prev) => ({
-      ...prev,
-      [metal]: parseFloat(value) || 0,
-    }));
-  }, []);
-
-  // In your savePrices function, after successful save:
-  const savePrices = async () => {
-    try {
-      setIsLoading(true);
-      const token = localStorage.getItem("token");
-      const response = await axios.put(
-        "http://localhost:5000/api/metal-prices",
-        metalPrices,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (response.data.success) {
-        alert("Prices updated successfully!");
-        fetchMetalPrices(); // Refresh the data
-
-        // Update last update info
-        setLastUpdate({
-          updatedBy: user?.name || "Admin",
-          updatedAt: new Date().toISOString(),
-        });
-      }
-    } catch (error) {
-      console.error("Error updating prices:", error);
-      alert("Error updating prices. Please try again.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Function to fetch live prices
-
-  const fetchLivePrices = async () => {
-    setIsFetchingLive(true);
-    try {
-      const response = await fetch(
-        "http://localhost:5000/api/metal-prices/live",
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      const data = await response.json();
-
-      if (data.success) {
-        // Update state
-        setLivePrices(data.livePrices);
-        setLastUpdated(data.lastUpdated);
-        setLiveDataSource(data.source);
-
-        // Save to localStorage
-        saveLivePricesToStorage(data.livePrices, data.lastUpdated, data.source);
-
-        alert("Live prices fetched successfully!");
-
-        console.log("Live prices fetched and saved:", {
-          prices: data.livePrices,
-          timestamp: data.lastUpdated,
-          source: data.source,
-        });
-      } else {
-        alert(data.message || "Failed to fetch live prices");
-        console.error("Error fetching live prices:", data.message);
-      }
-    } catch (error) {
-      console.error("Error fetching live prices:", error);
-      alert("Failed to fetch live prices. Please try again.");
-    } finally {
-      setIsFetchingLive(false);
-    }
-  };
-
-  // Function to sync live prices
-  const syncLivePrices = async () => {
-    setIsSyncing(true);
-    try {
-      const token = localStorage.getItem("token");
-      const response = await fetch(
-        "http://localhost:5000/api/metal-prices/sync-live",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      const data = await response.json();
-
-      if (data.success) {
-        // Update local state with synced prices
-        setMetalPrices({
-          gold24K: data.metalPrices.gold24K,
-          gold22K: data.metalPrices.gold22K,
-          gold18K: data.metalPrices.gold18K,
-          gold14K: data.metalPrices.gold14K,
-          silver: data.metalPrices.silver,
-        });
-
-        // Update live prices display
-        setLivePrices(data.livePrices);
-        setLastUpdated(data.syncedAt);
-        setLiveDataSource("GoldAPI.io (Synced)");
-
-        // Save to localStorage
-        saveLivePricesToStorage(
-          data.livePrices,
-          data.syncedAt,
-          "GoldAPI.io (Synced)"
-        );
-
-        alert("Prices synced successfully from live market data!");
-
-        console.log("Live prices synced and saved:", {
-          prices: data.livePrices,
-          timestamp: data.syncedAt,
-        });
-      } else {
-        alert(data.message || "Failed to sync live prices");
-      }
-    } catch (error) {
-      console.error("Error syncing live prices:", error);
-      alert("Failed to sync live prices. Please try again.");
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  // Function to save live prices to localStorage
-  const saveLivePricesToStorage = (prices, timestamp, source) => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.LIVE_PRICES, JSON.stringify(prices));
-      localStorage.setItem(STORAGE_KEYS.LAST_UPDATED, timestamp);
-      localStorage.setItem(STORAGE_KEYS.LIVE_DATA_SOURCE, source);
-    } catch (error) {
-      console.error("Error saving live prices to localStorage:", error);
-    }
-  };
-
-  const fetchCurrentLogo = async () => {
-    try {
-      const response = await axios.get("http://localhost:5000/api/logo");
-      if (response.data.logoUrl) {
-        setLogoUrl(response.data.logoUrl);
-      }
-    } catch (error) {
-      console.error("Error fetching logo:", error);
-    }
-  };
-
-  const handleLogout = () => {
-    if (window.confirm("Are you sure you want to logout?")) {
-      onLogout();
-    }
-  };
-
-  const handleLogoEdit = () => {
-    setShowLogoModal(true);
-  };
-
-  const handleFileSelect = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.type.startsWith("image/")) {
-        if (file.size <= 5 * 1024 * 1024) {
-          // 5MB limit
-          setSelectedImage(file);
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            setPreviewUrl(e.target.result);
-          };
-          reader.readAsDataURL(file);
-        } else {
-          alert("File size must be less than 5MB");
-        }
-      } else {
-        alert("Please select an image file");
-      }
-    }
-  };
-
-  const handleLogoUpload = async () => {
-    if (selectedImage) {
-      const formData = new FormData();
-      formData.append("logo", selectedImage);
-
-      try {
-        const token = localStorage.getItem("token");
-        const response = await axios.post(
-          "http://localhost:5000/api/upload/logo",
-          formData,
-          {
-            headers: {
-              "Content-Type": "multipart/form-data",
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-
-        if (response.data.logoUrl) {
-          setLogoUrl(response.data.logoUrl);
-          setShowLogoModal(false);
-          setSelectedImage(null);
-          setPreviewUrl(null);
-          alert("Logo updated successfully!");
-        }
-      } catch (error) {
-        console.error("Error uploading logo:", error);
-        alert("Error uploading logo. Please try again.");
-      }
-    }
-  };
-
-  const handleModalClose = () => {
-    setShowLogoModal(false);
-    setSelectedImage(null);
-    setPreviewUrl(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
-  const triggerFileInput = () => {
-    fileInputRef.current?.click();
-  };
-
-  const toggleAccordion = (section) => {
-    setActiveAccordion(activeAccordion === section ? null : section);
-  };
-
   const fetchStonePrices = async () => {
     try {
       const response = await axios.get(
@@ -724,6 +1535,11 @@ const Dashboard = ({ user, onLogout }) => {
       parseFloat(newStonePrice.weightFrom) >= parseFloat(newStonePrice.weightTo)
     ) {
       alert("Weight 'From' must be less than weight 'To'");
+      return;
+    }
+
+    if (parseFloat(newStonePrice.rate) <= 0) {
+      alert("Rate must be greater than 0.");
       return;
     }
 
@@ -855,13 +1671,11 @@ const Dashboard = ({ user, onLogout }) => {
     try {
       const date = new Date(timestamp);
 
-      // Check if date is valid
       if (isNaN(date.getTime())) {
         console.error("Invalid timestamp:", timestamp);
         return "Invalid Date";
       }
 
-      // Check if date is too old (before 2020) - likely a timestamp issue
       if (date.getFullYear() < 2020) {
         console.error("Timestamp seems to be in wrong format:", timestamp);
         return "Date Error";
@@ -882,7 +1696,7 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
-  // Calculate price change (you can enhance this with historical data)
+  // Calculate price change
   const calculatePriceChange = (currentPrice, previousPrice) => {
     if (!previousPrice || !currentPrice)
       return { change: 0, percentage: 0, isPositive: true };
@@ -929,12 +1743,6 @@ const Dashboard = ({ user, onLogout }) => {
       return;
     }
 
-    // Uncomment this if you want to enforce size and carat to be greater than 0
-    // if (parseFloat(newMmToCt.size) <= 0 || parseFloat(newMmToCt.carat) <= 0) {
-    //   alert("Size and carat must be greater than 0");
-    //   return;
-    // }
-
     try {
       setIsMmToCtLoading(true);
       const token = localStorage.getItem("token");
@@ -973,15 +1781,6 @@ const Dashboard = ({ user, onLogout }) => {
       alert("Please fill all fields");
       return;
     }
-
-    // Uncomment this if you want to enforce size and carat to be greater than 0
-    // if (
-    //   parseFloat(editingMmToCt.size) <= 0 ||
-    //   parseFloat(editingMmToCt.carat) <= 0
-    // ) {
-    //   alert("Size and carat must be greater than 0");
-    //   return;
-    // }
 
     try {
       setIsMmToCtLoading(true);
@@ -1068,103 +1867,6 @@ const Dashboard = ({ user, onLogout }) => {
     setSelectAllMmToCt(!selectAllMmToCt);
   };
 
-  const downloadTemplate = () => {
-    const link = document.createElement("a");
-    link.href = "http://localhost:5000/api/mm-to-ct/template";
-    link.download = "mm-to-ct-template.csv";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const downloadSelectedData = async () => {
-    try {
-      const token = localStorage.getItem("token");
-      const response = await axios.post(
-        "http://localhost:5000/api/mm-to-ct/download",
-        { ids: selectedMmToCtIds },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          responseType: "blob",
-        }
-      );
-
-      const blob = new Blob([response.data], { type: "text/csv" });
-      const link = document.createElement("a");
-      link.href = window.URL.createObjectURL(blob);
-      link.download = "mm-to-ct-data.csv";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (error) {
-      console.error("Error downloading CSV:", error);
-      alert("Error downloading CSV. Please try again.");
-    }
-  };
-
-  const handleCSVUpload = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    if (file.type !== "text/csv" && !file.name.endsWith(".csv")) {
-      alert("Please select a CSV file");
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("csvFile", file);
-
-    uploadCSV(formData);
-  };
-
-  const uploadCSV = async (formData) => {
-    try {
-      setIsMmToCtLoading(true);
-      const token = localStorage.getItem("token");
-      const response = await axios.post(
-        "http://localhost:5000/api/mm-to-ct/bulk-upload",
-        formData,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
-
-      if (response.data.success) {
-        await fetchMmToCtData(); // Refresh data
-        alert(
-          `Bulk upload completed successfully!\n${
-            response.data.results.length
-          } entries processed.\n${
-            response.data.errors.length > 0
-              ? `Errors: ${response.data.errors.length}`
-              : "No errors."
-          }`
-        );
-
-        if (response.data.errors.length > 0) {
-          console.log("Upload errors:", response.data.errors);
-        }
-      }
-    } catch (error) {
-      console.error("Error uploading CSV:", error);
-      alert(
-        error.response?.data?.message ||
-          "Error uploading CSV. Please try again."
-      );
-    } finally {
-      setIsMmToCtLoading(false);
-      // Reset file input
-      if (csvFileInputRef.current) {
-        csvFileInputRef.current.value = "";
-      }
-    }
-  };
-
   const bulkDeleteSelected = async () => {
     if (selectedMmToCtIds.length === 0) {
       alert("Please select entries to delete");
@@ -1193,7 +1895,7 @@ const Dashboard = ({ user, onLogout }) => {
       );
 
       if (response.data.success) {
-        await fetchMmToCtData(); // Refresh data
+        await fetchMmToCtData();
         setSelectedMmToCtIds([]);
         setSelectAllMmToCt(false);
         alert(`${response.data.deletedCount} entries deleted successfully!`);
@@ -1349,7 +2051,6 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
-  // Function to fetch minimum making charge
   const fetchMinimumMakingCharge = async () => {
     try {
       setIsMinChargeLoading(true);
@@ -1369,8 +2070,6 @@ const Dashboard = ({ user, onLogout }) => {
       setIsMinChargeLoading(false);
     }
   };
-
-  // Function to update minimum making charge
 
   const updateMinimumMakingCharge = async () => {
     if (
@@ -1425,7 +2124,6 @@ const Dashboard = ({ user, onLogout }) => {
         }
       );
       if (response.data.success) {
-        // Refresh list after deletion
         await fetchMakingCharges();
         setSelectedMakingChargeIds([]);
         setSelectAllMakingCharges(false);
@@ -1458,57 +2156,1485 @@ const Dashboard = ({ user, onLogout }) => {
     setSelectAllMakingCharges(!selectAllMakingCharges);
   };
 
-  // Rendering the main dashboard content
+  // Helper functions for the add product form
+  const resetNewProductForm = () => {
+    setNewProductForm({
+      title: "",
+      description: "",
+      productType: "",
+      vendor: "",
+      tags: "",
+      media: [
+        {
+          type: "upload",
+          file: null,
+          url: "",
+          preview: "",
+          mediaType: "image",
+        },
+      ],
+      inventory: {
+        quantity: "",
+        sku: "",
+        barcode: "",
+      },
+      weight: {
+        value: "",
+        unit: "kg",
+      },
+      seo: {
+        pageTitle: "",
+        metaDescription: "",
+        urlHandle: "",
+      },
+      metalConfig: {},
+      diamondConfig: [],
+      stoneConfig: [], // Changed from {} to []
+    });
+  };
+
+  const handleMediaAdd = () => {
+    if (newProductForm.media.length < 5) {
+      // Changed limit to 5
+      setNewProductForm((prev) => ({
+        ...prev,
+        media: [
+          ...prev.media,
+          {
+            type: "upload",
+            file: null,
+            url: "",
+            preview: "",
+            mediaType: "image",
+          },
+        ],
+      }));
+    }
+  };
+
+  const handleMediaRemove = (index) => {
+    if (newProductForm.media.length > 1) {
+      setNewProductForm((prev) => ({
+        ...prev,
+        media: prev.media.filter((_, i) => i !== index),
+      }));
+    }
+  };
+
+  const handleMediaChange = (index, field, value) => {
+    setNewProductForm((prev) => ({
+      ...prev,
+      media: prev.media.map((media, i) =>
+        i === index ? { ...media, [field]: value } : media
+      ),
+    }));
+  };
+
+  const handleMediaFileChange = (index, file) => {
+    if (file) {
+      // Validate file type and size
+      const validImageTypes = [
+        "image/jpeg",
+        "image/jpg",
+        "image/png",
+        "image/gif",
+        "image/webp",
+      ];
+      const validVideoTypes = [
+        "video/mp4",
+        "video/webm",
+        "video/ogg",
+        "video/mov",
+        "video/avi",
+      ];
+      const maxImageSize = 10 * 1024 * 1024; // 10MB for images
+      const maxVideoSize = 100 * 1024 * 1024; // 100MB for videos
+
+      const isImage = validImageTypes.includes(file.type);
+      const isVideo = validVideoTypes.includes(file.type);
+
+      if (!isImage && !isVideo) {
+        alert(
+          "Please select a valid image (JPEG, PNG, GIF, WebP) or video (MP4, WebM, OGG, MOV, AVI) file."
+        );
+        return;
+      }
+
+      if (isImage && file.size > maxImageSize) {
+        alert("Image file size must be less than 10MB.");
+        return;
+      }
+
+      if (isVideo && file.size > maxVideoSize) {
+        alert("Video file size must be less than 100MB.");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setNewProductForm((prev) => ({
+          ...prev,
+          media: prev.media.map((media, i) =>
+            i === index
+              ? {
+                  ...media,
+                  file,
+                  preview: e.target.result,
+                  mediaType: isImage ? "image" : "video",
+                }
+              : media
+          ),
+        }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Helper function to detect media type from URL
+  const detectMediaTypeFromUrl = (url) => {
+    const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
+    const videoExtensions = [".mp4", ".webm", ".ogg", ".mov", ".avi"];
+
+    const lowerUrl = url.toLowerCase();
+
+    if (imageExtensions.some((ext) => lowerUrl.includes(ext))) {
+      return "image";
+    } else if (videoExtensions.some((ext) => lowerUrl.includes(ext))) {
+      return "video";
+    }
+    return "image"; // default to image
+  };
+
+  const generateUrlHandle = (title) => {
+    return title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .trim();
+  };
+
+  const handleAddProduct = async () => {
+    if (!newProductForm.title.trim()) {
+      alert("Product title is required");
+      return;
+    }
+
+    try {
+      setIsAddingProduct(true);
+      const token = localStorage.getItem("token");
+
+      // Prepare form data for file uploads
+      const formData = new FormData();
+      formData.append("title", newProductForm.title);
+      formData.append("description", newProductForm.description);
+      formData.append("productType", newProductForm.productType);
+      formData.append("vendor", newProductForm.vendor);
+      formData.append("tags", newProductForm.tags);
+      formData.append("inventory", JSON.stringify(newProductForm.inventory));
+      formData.append("weight", JSON.stringify(newProductForm.weight));
+      formData.append("seo", JSON.stringify(newProductForm.seo));
+      formData.append(
+        "metalConfig",
+        JSON.stringify(newProductForm.metalConfig)
+      );
+      formData.append(
+        "diamondConfig",
+        JSON.stringify(newProductForm.diamondConfig)
+      );
+      formData.append(
+        "stoneConfig",
+        JSON.stringify(newProductForm.stoneConfig)
+      );
+
+      // Add media - separate files and URLs
+      const mediaUrls = [];
+      newProductForm.media.forEach((media, index) => {
+        if (media.file) {
+          formData.append("media", media.file);
+        } else if (media.url && media.url.trim()) {
+          mediaUrls.push({
+            url: media.url.trim(),
+            type: media.mediaType,
+          });
+        }
+      });
+
+      // Add media URLs as a JSON string
+      if (mediaUrls.length > 0) {
+        formData.append("mediaUrls", JSON.stringify(mediaUrls));
+      }
+
+      console.log("Sending product data to backend...");
+
+      const response = await axios.post(
+        "http://localhost:5000/api/shopify/add-product",
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+
+      if (response.data.success) {
+        alert("Product added successfully to Shopify!");
+        setShowAddProductModal(false);
+        resetNewProductForm();
+        // Refresh products list
+        await fetchShopifyProducts();
+        await fetchProductAnalytics();
+      }
+    } catch (error) {
+      console.error("Error adding product:", error);
+      console.error("Error details:", error.response?.data);
+      alert(error.response?.data?.message || "Failed to add product");
+    } finally {
+      setIsAddingProduct(false);
+    }
+  };
+
+  const DiamondConfigCard = ({ diamond, index, onUpdate, onRemove }) => {
+    // Helper function to convert MM to CT (you'll need to implement based on your conversion data)
+    const convertMmToCt = (mmValue) => {
+      // This is a placeholder - implement your actual MM to CT conversion logic
+      // based on your conversion data from the tabs
+      const conversionRate = 0.005; // Example rate
+      return (parseFloat(mmValue) * conversionRate).toFixed(3);
+    };
+
+    // Calculate total weight and diamond value
+    const calculateValues = (updatedDiamond) => {
+      const pieces = parseInt(updatedDiamond.pieces) || 0;
+      const ctValue = parseFloat(updatedDiamond.ctValue) || 0;
+      const totalWeight = pieces * ctValue;
+
+      // Calculate diamond value based on your diamond rate chart
+      // This is placeholder logic - implement based on your rate chart
+      const pricePerCarat = 1000; // Get from your diamond rate chart
+      const diamondValue = totalWeight * pricePerCarat;
+
+      return {
+        ...updatedDiamond,
+        totalWeight: totalWeight.toFixed(3),
+        diamondValue: diamondValue.toFixed(2),
+      };
+    };
+
+    const handleFieldChange = (field, value) => {
+      let updatedDiamond = { ...diamond, [field]: value };
+
+      // Handle MM to CT conversion
+      if (field === "mmValue" && diamond.weightType === "mm") {
+        updatedDiamond.ctValue = convertMmToCt(value);
+      }
+
+      // Recalculate values when pieces or ctValue changes
+      if (field === "pieces" || field === "ctValue" || field === "mmValue") {
+        updatedDiamond = calculateValues(updatedDiamond);
+      }
+
+      onUpdate(updatedDiamond);
+    };
+
+    return (
+      <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-sm font-medium text-gray-700">
+            Diamond {index + 1}
+          </span>
+          <button
+            onClick={onRemove}
+            className="text-red-600 hover:text-red-800 text-sm"
+          >
+            Remove
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* Diamond Shape */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Shape
+            </label>
+            <select
+              value={diamond.shape}
+              onChange={(e) => handleFieldChange("shape", e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Select Shape</option>
+              <option value="Round">Round</option>
+              <option value="Fancy">Fancy</option>
+            </select>
+          </div>
+
+          {/* Diamond Color */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Color
+            </label>
+            <select
+              value={diamond.color}
+              onChange={(e) => handleFieldChange("color", e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Select Color</option>
+              <option value="D">D</option>
+              <option value="E">E</option>
+              <option value="F">F</option>
+              <option value="G">G</option>
+              <option value="H">H</option>
+              <option value="I">I</option>
+              <option value="J">J</option>
+            </select>
+          </div>
+
+          {/* Diamond Clarity */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Clarity
+            </label>
+            <select
+              value={diamond.clarity}
+              onChange={(e) => handleFieldChange("clarity", e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Select Clarity</option>
+              <option value="FL">FL</option>
+              <option value="IF">IF</option>
+              <option value="VVS1">VVS1</option>
+              <option value="VVS2">VVS2</option>
+              <option value="VS1">VS1</option>
+              <option value="VS2">VS2</option>
+              <option value="SI1">SI1</option>
+              <option value="SI2">SI2</option>
+            </select>
+          </div>
+
+          {/* Number of Pieces */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              No. of Pieces
+            </label>
+            <input
+              type="number"
+              value={diamond.pieces}
+              onChange={(e) => handleFieldChange("pieces", e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="0"
+            />
+          </div>
+
+          {/* Weight Type Toggle */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Weight Type
+            </label>
+            <div className="flex bg-gray-100 rounded-lg p-1">
+              <button
+                type="button"
+                onClick={() => handleFieldChange("weightType", "mm")}
+                className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                  diamond.weightType === "mm"
+                    ? "bg-blue-600 text-white"
+                    : "text-gray-700 hover:bg-gray-200"
+                }`}
+              >
+                MM
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFieldChange("weightType", "ct")}
+                className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                  diamond.weightType === "ct"
+                    ? "bg-blue-600 text-white"
+                    : "text-gray-700 hover:bg-gray-200"
+                }`}
+              >
+                CT
+              </button>
+            </div>
+          </div>
+
+          {/* Weight Input */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Weight ({diamond.weightType.toUpperCase()})
+            </label>
+            <input
+              type="number"
+              step="0.001"
+              value={
+                diamond.weightType === "mm" ? diamond.mmValue : diamond.ctValue
+              }
+              onChange={(e) =>
+                handleFieldChange(
+                  diamond.weightType === "mm" ? "mmValue" : "ctValue",
+                  e.target.value
+                )
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="0.000"
+            />
+          </div>
+
+          {/* Show CT value when MM is selected */}
+          {diamond.weightType === "mm" && diamond.ctValue && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Converted CT Value
+              </label>
+              <input
+                type="number"
+                step="0.001"
+                value={diamond.ctValue}
+                onChange={(e) => handleFieldChange("ctValue", e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="0.000"
+              />
+            </div>
+          )}
+
+          {/* Total Weight (Read-only) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Total Weight (CT)
+            </label>
+            <input
+              type="text"
+              value={diamond.totalWeight || "0.000"}
+              readOnly
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
+            />
+          </div>
+
+          {/* Diamond Value (Read-only) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Diamond Value (₹)
+            </label>
+            <input
+              type="text"
+              value={diamond.diamondValue || "0.00"}
+              readOnly
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Add this as a separate component or function
+  const StoneConfigCard = ({ stone, index, onUpdate, onRemove }) => {
+    // Calculate total weight and stone value
+    const calculateStoneValues = (updatedStone) => {
+      const pieces = parseInt(updatedStone.pieces) || 0;
+      const weight = parseFloat(updatedStone.weight) || 0;
+      const totalWeight = pieces * weight;
+
+      // Calculate stone value based on your stone rate chart
+      // This is placeholder logic - implement based on your rate chart from stone prices
+      const getStoneRate = (stoneType, totalWeight) => {
+        // This should match stones from your stone rate chart based on weight range
+        // For now using placeholder rates
+        const rates = {
+          Gemstone: 100, // ₹ per gram
+          Moissanite: 150, // ₹ per gram
+        };
+        return rates[stoneType] || 0;
+      };
+
+      const ratePerGram = getStoneRate(updatedStone.stoneType, totalWeight);
+      const stoneValue = totalWeight * ratePerGram;
+
+      return {
+        ...updatedStone,
+        totalWeight: totalWeight.toFixed(3),
+        stoneValue: stoneValue.toFixed(2),
+      };
+    };
+
+    const handleFieldChange = (field, value) => {
+      let updatedStone = { ...stone, [field]: value };
+
+      // Recalculate values when pieces, weight, or stone type changes
+      if (field === "pieces" || field === "weight" || field === "stoneType") {
+        updatedStone = calculateStoneValues(updatedStone);
+      }
+
+      onUpdate(updatedStone);
+    };
+
+    // Stone color options based on type
+    const getColorOptions = (stoneType) => {
+      const colorOptions = {
+        Gemstone: [
+          "Red",
+          "Blue",
+          "Green",
+          "Yellow",
+          "Purple",
+          "Pink",
+          "Orange",
+          "White",
+          "Black",
+          "Clear",
+          "Multi-Color",
+        ],
+        Moissanite: [
+          "Colorless",
+          "Near Colorless",
+          "Faint Yellow",
+          "Light Yellow",
+          "Yellow",
+          "Blue",
+          "Green",
+          "Gray",
+          "Black",
+        ],
+      };
+      return colorOptions[stoneType] || [];
+    };
+
+    return (
+      <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-sm font-medium text-gray-700">
+            Stone {index + 1}
+          </span>
+          <button
+            onClick={onRemove}
+            className="text-red-600 hover:text-red-800 text-sm"
+          >
+            Remove
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* Stone Type */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Stone Type
+            </label>
+            <select
+              value={stone.stoneType}
+              onChange={(e) => handleFieldChange("stoneType", e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+            >
+              <option value="">Select Stone Type</option>
+              <option value="Gemstone">Gemstone</option>
+              <option value="Moissanite">Moissanite</option>
+            </select>
+          </div>
+
+          {/* Stone Color */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Stone Color
+            </label>
+            <select
+              value={stone.stoneColor}
+              onChange={(e) => handleFieldChange("stoneColor", e.target.value)}
+              disabled={!stone.stoneType}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 disabled:bg-gray-100"
+            >
+              <option value="">Select Color</option>
+              {getColorOptions(stone.stoneType).map((color) => (
+                <option key={color} value={color}>
+                  {color}
+                </option>
+              ))}
+            </select>
+            {!stone.stoneType && (
+              <p className="text-xs text-gray-500 mt-1">
+                Select stone type first
+              </p>
+            )}
+          </div>
+
+          {/* Number of Pieces */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              No. of Pieces
+            </label>
+            <input
+              type="number"
+              value={stone.pieces}
+              onChange={(e) => handleFieldChange("pieces", e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              placeholder="0"
+              min="1"
+            />
+          </div>
+
+          {/* Weight per Stone */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Weight per Stone (gm)
+            </label>
+            <input
+              type="number"
+              step="0.001"
+              value={stone.weight}
+              onChange={(e) => handleFieldChange("weight", e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              placeholder="0.000"
+              min="0"
+            />
+          </div>
+
+          {/* Total Weight (Read-only) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Total Weight (gm)
+            </label>
+            <input
+              type="text"
+              value={stone.totalWeight || "0.000"}
+              readOnly
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              {stone.pieces || 0} pieces × {stone.weight || 0} gm
+            </p>
+          </div>
+
+          {/* Stone Value (Read-only) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Stone Value (₹)
+            </label>
+            <input
+              type="text"
+              value={stone.stoneValue || "0.00"}
+              readOnly
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
+            />
+            <p className="text-xs text-gray-500 mt-1">Based on rate chart</p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Render functions
 
   const renderProductsContent = () => (
     <div className="space-y-6">
-      <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          Products Overview
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200">
-            <h4 className="font-medium text-blue-900 mb-2">Total Products</h4>
-            <p className="text-2xl font-bold text-blue-700">1,247</p>
+      {/* Analytics Dashboard */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl p-6 text-white relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-white/10 rounded-full -translate-y-8 translate-x-8"></div>
+          <div className="relative z-10">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="font-medium text-blue-100">Total Products</h4>
+              <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+                <span className="text-lg">📦</span>
+              </div>
+            </div>
+            <p className="text-3xl font-bold">
+              {productAnalytics.totalProducts.toLocaleString()}
+            </p>
+            <p className="text-sm text-blue-200 mt-1">
+              {syncStatus.isConfigured ? "Synced from store" : "Not synced"}
+            </p>
           </div>
-          <div className="bg-gradient-to-r from-green-50 to-green-100 rounded-lg p-4 border border-green-200">
-            <h4 className="font-medium text-green-900 mb-2">Active Products</h4>
-            <p className="text-2xl font-bold text-green-700">1,156</p>
+        </div>
+
+        <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-xl p-6 text-white relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-white/10 rounded-full -translate-y-8 translate-x-8"></div>
+          <div className="relative z-10">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="font-medium text-green-100">Active Products</h4>
+              <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+                <span className="text-lg">✅</span>
+              </div>
+            </div>
+            <p className="text-3xl font-bold">
+              {productAnalytics.activeProducts.toLocaleString()}
+            </p>
+            <p className="text-sm text-green-200 mt-1">
+              {productAnalytics.totalProducts > 0
+                ? `${(
+                    (productAnalytics.activeProducts /
+                      productAnalytics.totalProducts) *
+                    100
+                  ).toFixed(1)}% of total`
+                : "No products"}
+            </p>
           </div>
-          <div className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-lg p-4 border border-orange-200">
-            <h4 className="font-medium text-orange-900 mb-2">Categories</h4>
-            <p className="text-2xl font-bold text-orange-700">37</p>
+        </div>
+
+        <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 rounded-xl p-6 text-white relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-white/10 rounded-full -translate-y-8 translate-x-8"></div>
+          <div className="relative z-10">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="font-medium text-yellow-100">Draft Products</h4>
+              <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+                <span className="text-lg">📝</span>
+              </div>
+            </div>
+            <p className="text-3xl font-bold">
+              {productAnalytics.draftProducts.toLocaleString()}
+            </p>
+            <p className="text-sm text-yellow-200 mt-1">
+              {productAnalytics.totalProducts > 0
+                ? `${(
+                    (productAnalytics.draftProducts /
+                      productAnalytics.totalProducts) *
+                    100
+                  ).toFixed(1)}% of total`
+                : "No products"}
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-r from-gray-500 to-gray-600 rounded-xl p-6 text-white relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-white/10 rounded-full -translate-y-8 translate-x-8"></div>
+          <div className="relative z-10">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="font-medium text-gray-100">Archived Products</h4>
+              <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+                <span className="text-lg">🗃️</span>
+              </div>
+            </div>
+            <p className="text-3xl font-bold">
+              {productAnalytics.archivedProducts.toLocaleString()}
+            </p>
+            <p className="text-sm text-gray-200 mt-1">
+              {productAnalytics.totalProducts > 0
+                ? `${(
+                    (productAnalytics.archivedProducts /
+                      productAnalytics.totalProducts) *
+                    100
+                  ).toFixed(1)}% of total`
+                : "No products"}
+            </p>
           </div>
         </div>
       </div>
 
-      <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          Recent Products
-        </h3>
-        <div className="space-y-3">
-          {[1, 2, 3, 4, 5].map((item) => (
-            <div
-              key={item}
-              className="flex items-center justify-between p-3 bg-gray-50/50 rounded-lg border border-gray-100"
-            >
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-gradient-to-r from-purple-400 to-pink-400 rounded-lg"></div>
-                <div>
-                  <p className="font-medium text-gray-900">Product {item}</p>
-                  <p className="text-sm text-gray-600">
-                    Category • SKU-000{item}
-                  </p>
+      {/* Top Vendors Section - Add this after the main analytics cards */}
+      {/* {productAnalytics.topVendors &&
+        productAnalytics.topVendors.length > 0 && (
+          <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Top Vendors
+              </h3>
+              <span className="text-sm text-gray-600">
+                Last updated:{" "}
+                {syncStatus.lastSync
+                  ? new Date(syncStatus.lastSync).toLocaleString()
+                  : "Never"}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              {productAnalytics.topVendors.slice(0, 5).map((vendor, index) => (
+                <div
+                  key={vendor._id || index}
+                  className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-4 border border-indigo-200"
+                >
+                  <div className="text-center">
+                    <h4 className="font-semibold text-indigo-900 truncate">
+                      {vendor._id || "Unknown Vendor"}
+                    </h4>
+                    <p className="text-2xl font-bold text-indigo-700 mt-2">
+                      {vendor.count}
+                    </p>
+                    <p className="text-sm text-indigo-600">products</p>
+                  </div>
                 </div>
-              </div>
-              <div className="text-right">
-                <p className="font-semibold text-gray-900">
-                  ₹{(item * 1000).toLocaleString()}
+              ))}
+            </div>
+          </div>
+        )} */}
+
+      {/* Sync Status and Controls */}
+      <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 p-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Shopify Integration
+            </h3>
+            <div className="text-sm text-gray-600 space-y-1">
+              <p>
+                <span className="font-medium">Status:</span>{" "}
+                {syncStatus.isConfigured ? "✅ Connected" : "❌ Not Configured"}
+              </p>
+              {syncStatus.storeUrl && (
+                <p>
+                  <span className="font-medium">Store:</span>{" "}
+                  {syncStatus.storeUrl}
                 </p>
-                <p className="text-sm text-green-600">In Stock</p>
+              )}
+              {syncStatus.lastSync && (
+                <p>
+                  <span className="font-medium">Last Sync:</span>{" "}
+                  {new Date(syncStatus.lastSync).toLocaleString()}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            {isShopifyConfigured && (
+              <>
+                <button
+                  onClick={() => syncShopifyProducts(false)}
+                  disabled={isSyncing}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <RefreshCw
+                    size={16}
+                    className={isSyncing ? "animate-spin" : ""}
+                  />
+                  {isSyncing ? "Syncing..." : "Quick Sync"}
+                </button>
+                <button
+                  onClick={() => syncShopifyProducts(true)}
+                  disabled={isSyncing}
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <RefreshCw
+                    size={16}
+                    className={isSyncing ? "animate-spin" : ""}
+                  />
+                  {isSyncing ? "Syncing..." : "Full Sync"}
+                </button>
+              </>
+            )}
+
+            <button
+              onClick={() => setShowAddProductModal(true)}
+              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors flex items-center"
+            >
+              <Plus size={16} className="mr-2" />
+              Add New Product
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Search and Filters */}
+      <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 p-6">
+        <div className="flex flex-col lg:flex-row gap-4">
+          {/* Search */}
+          <div className="flex-1">
+            <div className="relative">
+              <Search
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                size={20}
+              />
+              <input
+                type="text"
+                placeholder="Search products..."
+                onChange={(e) => debouncedSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          {/* Filters */}
+          <div className="flex flex-wrap gap-3">
+            <select
+              value={selectedStatus}
+              onChange={(e) => {
+                setSelectedStatus(e.target.value);
+                setPagination((prev) => ({ ...prev, current: 1 }));
+              }}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">All Status</option>
+              {productFilters.statuses.map((status) => (
+                <option key={status} value={status}>
+                  {status.charAt(0).toUpperCase() + status.slice(1)}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={selectedVendor}
+              onChange={(e) => {
+                setSelectedVendor(e.target.value);
+                setPagination((prev) => ({ ...prev, current: 1 }));
+              }}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">All Vendors</option>
+              {productFilters.vendors.map((vendor) => (
+                <option key={vendor} value={vendor}>
+                  {vendor}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={selectedProductType}
+              onChange={(e) => {
+                setSelectedProductType(e.target.value);
+                setPagination((prev) => ({ ...prev, current: 1 }));
+              }}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">All Types</option>
+              {productFilters.productTypes.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Bulk Actions */}
+        {selectedProducts.length > 0 && (
+          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-center justify-between">
+              <span className="text-blue-700 font-medium">
+                {selectedProducts.length} product
+                {selectedProducts.length > 1 ? "s" : ""} selected
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => bulkUpdateProducts({ status: "active" })}
+                  disabled={isLoading}
+                  className="px-3 py-1 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white text-sm rounded transition-colors"
+                >
+                  Activate
+                </button>
+                <button
+                  onClick={() => bulkUpdateProducts({ status: "draft" })}
+                  disabled={isLoading}
+                  className="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 disabled:bg-yellow-300 text-white text-sm rounded transition-colors"
+                >
+                  Draft
+                </button>
+                <button
+                  onClick={() => bulkUpdateProducts({ status: "archived" })}
+                  disabled={isLoading}
+                  className="px-3 py-1 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-300 text-white text-sm rounded transition-colors"
+                >
+                  Archive
+                </button>
               </div>
             </div>
-          ))}
+          </div>
+        )}
+      </div>
+
+      {/* Products Grid */}
+      {/* Products List - Replace the existing Products Grid section */}
+      <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 overflow-hidden">
+        {!isShopifyConfigured ? (
+          <div className="text-center py-12">
+            <Settings className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              Shopify Not Configured
+            </h3>
+            <p className="text-gray-600 mb-4">
+              Please configure your Shopify store connection in the
+              Configuration tab to start managing products.
+            </p>
+            <button
+              onClick={() => {
+                setActiveMainTab("configuration");
+                setActiveConfigTab("shopify-config");
+              }}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+            >
+              Configure Shopify
+            </button>
+          </div>
+        ) : isLoading ? (
+          <div className="text-center py-12">
+            <RefreshCw className="mx-auto h-8 w-8 text-blue-600 animate-spin mb-4" />
+            <p className="text-gray-600">Loading products...</p>
+          </div>
+        ) : shopifyProducts.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="text-gray-400 mb-4">
+              <svg
+                className="mx-auto h-12 w-12"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2 2v-5m16 0h-2M4 13h2m8-8V4.5"
+                />
+              </svg>
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              No Products Found
+            </h3>
+            <p className="text-gray-600 mb-4">
+              {searchTerm ||
+              selectedStatus ||
+              selectedVendor ||
+              selectedProductType
+                ? "No products match your current filters. Try adjusting your search criteria."
+                : 'No products have been synced yet. Click "Quick Sync" to fetch products from your Shopify store.'}
+            </p>
+            {!(
+              searchTerm ||
+              selectedStatus ||
+              selectedVendor ||
+              selectedProductType
+            ) && (
+              <button
+                onClick={() => syncShopifyProducts(false)}
+                disabled={isSyncing}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium rounded-lg transition-colors"
+              >
+                {isSyncing ? "Syncing..." : "Sync Products Now"}
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            {/* Select All Header */}
+            <div className="px-6 py-3 border-b border-gray-200 bg-gray-50/50">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={selectAll}
+                  onChange={handleSelectAllProducts}
+                  className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-3"
+                />
+                <span className="text-sm font-medium text-gray-700">
+                  Select All ({shopifyProducts.length} products on this page)
+                </span>
+              </label>
+            </div>
+
+            {/* Products List Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50/80 border-b border-gray-200">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Product
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Details
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Price
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Tags
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {shopifyProducts.map((product) => {
+                    const mainImage =
+                      product.images?.[0]?.url ||
+                      "https://placehold.co/80x80?text=No+Image";
+                    const mainVariant = product.variants?.[0] || {};
+                    const isSelected = selectedProducts.includes(product._id);
+
+                    return (
+                      <tr
+                        key={product._id}
+                        className={`hover:bg-gray-50 transition-colors ${
+                          isSelected
+                            ? "bg-blue-50 border-l-4 border-blue-500"
+                            : ""
+                        }`}
+                      >
+                        {/* Product Info with Image */}
+                        <td className="px-6 py-4">
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleProductSelect(product._id)}
+                              className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-4"
+                            />
+                            <div className="flex-shrink-0 h-16 w-16">
+                              <img
+                                className="h-16 w-16 rounded-lg object-cover border border-gray-200"
+                                src={mainImage}
+                                alt={product.title}
+                              />
+                            </div>
+                            <div className="ml-4 min-w-0 flex-1">
+                              <div className="text-sm font-medium text-gray-900 line-clamp-2">
+                                {product.title}
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                ID: {product.shopifyId}
+                              </div>
+                              {product.handle && (
+                                <div className="text-xs text-gray-400">
+                                  Handle: {product.handle}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Details */}
+                        <td className="px-6 py-4">
+                          <div className="text-sm text-gray-900">
+                            {product.vendor && (
+                              <div className="flex items-center mb-1">
+                                <span className="font-medium">Vendor:</span>
+                                <span className="ml-1">{product.vendor}</span>
+                              </div>
+                            )}
+                            {product.productType && (
+                              <div className="flex items-center mb-1">
+                                <span className="font-medium">Type:</span>
+                                <span className="ml-1">
+                                  {product.productType}
+                                </span>
+                              </div>
+                            )}
+                            {product.variants &&
+                              product.variants.length > 1 && (
+                                <div className="text-xs text-blue-600">
+                                  {product.variants.length} variants
+                                </div>
+                              )}
+                          </div>
+                        </td>
+
+                        {/* Status */}
+                        <td className="px-6 py-4">
+                          <span
+                            className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                              product.status === "active"
+                                ? "bg-green-100 text-green-800"
+                                : product.status === "draft"
+                                ? "bg-yellow-100 text-yellow-800"
+                                : "bg-gray-100 text-gray-800"
+                            }`}
+                          >
+                            {product.status}
+                          </span>
+                        </td>
+
+                        {/* Price */}
+                        <td className="px-6 py-4">
+                          {mainVariant.price ? (
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">
+                                ₹{mainVariant.price.toLocaleString()}
+                              </div>
+                              {mainVariant.compareAtPrice &&
+                                mainVariant.compareAtPrice >
+                                  mainVariant.price && (
+                                  <div className="text-xs text-gray-500 line-through">
+                                    ₹
+                                    {mainVariant.compareAtPrice.toLocaleString()}
+                                  </div>
+                                )}
+                              {mainVariant.sku && (
+                                <div className="text-xs text-gray-400">
+                                  SKU: {mainVariant.sku}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-sm text-gray-500">
+                              No price
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Tags */}
+                        <td className="px-6 py-4">
+                          {product.tags && product.tags.length > 0 ? (
+                            <div className="flex flex-wrap gap-1 max-w-xs">
+                              {product.tags.slice(0, 3).map((tag, index) => (
+                                <span
+                                  key={index}
+                                  className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-800"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                              {product.tags.length > 3 && (
+                                <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
+                                  +{product.tags.length - 3}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-sm text-gray-500">
+                              No tags
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Actions */}
+                        <td className="px-6 py-4 text-right text-sm font-medium">
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => handleProductView(product)}
+                              className="inline-flex items-center px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+                            >
+                              <Eye size={14} className="mr-1" />
+                              View
+                            </button>
+                            <button
+                              onClick={() => handleProductEdit(product)}
+                              className="inline-flex items-center px-3 py-1 border border-blue-300 rounded-md text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors"
+                            >
+                              <Edit size={14} className="mr-1" />
+                              Edit
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            {pagination.total > 1 && (
+              <div className="px-6 py-4 border-t border-gray-200 bg-gray-50/50">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-gray-700">
+                    Showing page {pagination.current} of {pagination.total}
+                    <span className="ml-1">
+                      ({pagination.totalProducts} total products)
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() =>
+                        fetchShopifyProducts(pagination.current - 1)
+                      }
+                      disabled={!pagination.hasPrev || isLoading}
+                      className="px-3 py-1 border border-gray-300 rounded-md text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Previous
+                    </button>
+                    <span className="px-3 py-1 text-sm font-medium">
+                      {pagination.current} / {pagination.total}
+                    </span>
+                    <button
+                      onClick={() =>
+                        fetchShopifyProducts(pagination.current + 1)
+                      }
+                      disabled={!pagination.hasNext || isLoading}
+                      className="px-3 py-1 border border-gray-300 rounded-md text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderShopifyConfigContent = () => (
+    <div className="space-y-6">
+      <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+          Shopify Store Configuration
+        </h3>
+
+        {/* Current Configuration Status */}
+        {isShopifyConfigured && shopifyConfig && (
+          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+            <h4 className="font-medium text-green-900 mb-2">
+              ✅ Currently Connected
+            </h4>
+            <div className="text-sm text-green-700 space-y-1">
+              <p>
+                <span className="font-medium">Store URL:</span>{" "}
+                {shopifyConfig.storeUrl}
+              </p>
+              <p>
+                <span className="font-medium">API Version:</span>{" "}
+                {shopifyConfig.apiVersion}
+              </p>
+              <p>
+                <span className="font-medium">Connected By:</span>{" "}
+                {shopifyConfig.updatedBy?.name || "Admin"}
+              </p>
+              <p>
+                <span className="font-medium">Connected At:</span>{" "}
+                {new Date(shopifyConfig.updatedAt).toLocaleString()}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Configuration Form */}
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Store URL <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              placeholder="your-store.myshopify.com"
+              value={shopifyConfigForm.storeUrl}
+              onChange={(e) =>
+                setShopifyConfigForm((prev) => ({
+                  ...prev,
+                  storeUrl: e.target.value,
+                }))
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Enter your Shopify store URL without https:// (e.g.,
+              mystore.myshopify.com)
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Access Token <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="password"
+              placeholder={
+                isShopifyConfigured
+                  ? "Enter new token to update"
+                  : "Enter your private app access token"
+              }
+              value={shopifyConfigForm.accessToken}
+              onChange={(e) =>
+                setShopifyConfigForm((prev) => ({
+                  ...prev,
+                  accessToken: e.target.value,
+                }))
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Your private app access token with read/write permissions for
+              products
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              API Version
+            </label>
+            <select
+              value={shopifyConfigForm.apiVersion}
+              onChange={(e) =>
+                setShopifyConfigForm((prev) => ({
+                  ...prev,
+                  apiVersion: e.target.value,
+                }))
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="2024-01">2024-01 (Recommended)</option>
+              <option value="2023-10">2023-10</option>
+              <option value="2023-07">2023-07</option>
+            </select>
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <button
+              onClick={saveShopifyConfig}
+              disabled={
+                isConfiguringShopify ||
+                !shopifyConfigForm.storeUrl ||
+                !shopifyConfigForm.accessToken
+              }
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium rounded-lg transition-colors"
+            >
+              {isConfiguringShopify
+                ? "Configuring..."
+                : isShopifyConfigured
+                ? "Update Configuration"
+                : "Save Configuration"}
+            </button>
+
+            {isShopifyConfigured && (
+              <button
+                onClick={() => {
+                  setShopifyConfigForm({
+                    storeUrl: shopifyConfig.storeUrl,
+                    accessToken: "",
+                    apiVersion: shopifyConfig.apiVersion,
+                  });
+                }}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-lg transition-colors"
+              >
+                Reset Form
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Setup Instructions */}
+        <div className="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <h4 className="font-medium text-blue-900 mb-2">
+            📖 Setup Instructions
+          </h4>
+          <div className="text-sm text-blue-700 space-y-2">
+            <p>
+              <strong>1.</strong> Go to your Shopify Admin → Apps → App and
+              sales channel settings
+            </p>
+            <p>
+              <strong>2.</strong> Click "Develop apps" → "Create an app"
+            </p>
+            <p>
+              <strong>3.</strong> Configure Admin API access scopes:{" "}
+              <code className="bg-white px-1 rounded">
+                read_products, write_products
+              </code>
+            </p>
+            <p>
+              <strong>4.</strong> Install the app and copy the Admin API access
+              token
+            </p>
+            <p>
+              <strong>5.</strong> Enter your store URL and access token above
+            </p>
+          </div>
+        </div>
+
+        {/* Sync Status */}
+        <div className="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+          <h4 className="font-medium text-gray-900 mb-2">🔄 Sync Status</h4>
+          <div className="text-sm text-gray-700 space-y-1">
+            <p>
+              <span className="font-medium">Products Synced:</span>{" "}
+              {syncStatus.productCount.toLocaleString()}
+            </p>
+            <p>
+              <span className="font-medium">Last Sync:</span>{" "}
+              {syncStatus.lastSync
+                ? new Date(syncStatus.lastSync).toLocaleString()
+                : "Never"}
+            </p>
+            <p>
+              <span className="font-medium">Status:</span>{" "}
+              {syncStatus.isConfigured ? "✅ Ready" : "❌ Not Configured"}
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -1516,19 +3642,21 @@ const Dashboard = ({ user, onLogout }) => {
 
   const renderRateChartsContent = () => (
     <div className="space-y-6">
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-        <p className="text-sm text-blue-700">
-          <span className="font-medium">
-            Last updated by {lastUpdate?.updatedBy}
-          </span>{" "}
-          •{" "}
-          {lastUpdate?.updatedAt
-            ? new Date(lastUpdate.updatedAt).toLocaleDateString() +
-              " at " +
-              new Date(lastUpdate.updatedAt).toLocaleTimeString()
-            : "No updates yet"}
-        </p>
-      </div>
+      {lastUpdate && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+          <p className="text-sm text-blue-700">
+            <span className="font-medium">
+              Last updated by {lastUpdate?.updatedBy}
+            </span>{" "}
+            •{" "}
+            {lastUpdate?.updatedAt
+              ? new Date(lastUpdate.updatedAt).toLocaleDateString() +
+                " at " +
+                new Date(lastUpdate.updatedAt).toLocaleTimeString()
+              : "No updates yet"}
+          </p>
+        </div>
+      )}
 
       <div className="space-y-4">
         {/* Metal Prices Accordion */}
@@ -2308,51 +4436,15 @@ const Dashboard = ({ user, onLogout }) => {
           </h3>
 
           <div className="flex flex-wrap gap-3">
-            {/* <button
-              onClick={downloadTemplate}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
-            >
-              <span className="material-icons text-sm">download</span>
-              Download Template
-            </button> */}
-
-            {/* <div className="relative">
-              <input
-                ref={csvFileInputRef}
-                type="file"
-                accept=".csv"
-                onChange={handleCSVUpload}
-                className="hidden"
-              />
-              <button
-                onClick={() => csvFileInputRef.current?.click()}
-                disabled={isMmToCtLoading}
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
-              >
-                <span className="material-icons text-sm">upload</span>
-                {isMmToCtLoading ? "Uploading..." : "Upload CSV"}
-              </button>
-            </div> */}
-
             {selectedMmToCtIds.length > 0 && (
-              <>
-                {/* <button
-                  onClick={downloadSelectedData}
-                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <span className="material-icons text-sm">file_download</span>
-                  Download Selected
-                </button> */}
-
-                <button
-                  onClick={bulkDeleteSelected}
-                  disabled={isMmToCtLoading}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <span className="material-icons text-sm">delete</span>
-                  Delete Selected ({selectedMmToCtIds.length})
-                </button>
-              </>
+              <button
+                onClick={bulkDeleteSelected}
+                disabled={isMmToCtLoading}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+              >
+                <Trash2 size={16} />
+                Delete Selected ({selectedMmToCtIds.length})
+              </button>
             )}
           </div>
         </div>
@@ -2424,13 +4516,9 @@ const Dashboard = ({ user, onLogout }) => {
       <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 overflow-hidden">
         {mmToCtData.length === 0 ? (
           <div className="text-center py-12 text-gray-500">
-            <span className="material-icons text-4xl text-gray-300 mb-4">
-              table_view
-            </span>
+            <div className="text-4xl text-gray-300 mb-4">📏</div>
             <p className="text-lg mb-2">No MM to CT conversions found</p>
-            <p className="text-sm">
-              Add your first conversion above or upload a CSV file
-            </p>
+            <p className="text-sm">Add your first conversion above</p>
           </div>
         ) : (
           <>
@@ -2543,18 +4631,12 @@ const Dashboard = ({ user, onLogout }) => {
                                 disabled={isMmToCtLoading}
                                 className="px-2 py-1 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white text-xs rounded flex items-center gap-1"
                               >
-                                <span className="material-icons text-xs">
-                                  save
-                                </span>
                                 Save
                               </button>
                               <button
                                 onClick={() => setEditingMmToCt(null)}
                                 className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded flex items-center gap-1"
                               >
-                                <span className="material-icons text-xs">
-                                  cancel
-                                </span>
                                 Cancel
                               </button>
                             </div>
@@ -2600,9 +4682,7 @@ const Dashboard = ({ user, onLogout }) => {
                                 onClick={() => setEditingMmToCt(item)}
                                 className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded flex items-center gap-1"
                               >
-                                <span className="material-icons text-xs">
-                                  edit
-                                </span>
+                                <Edit size={12} />
                                 Edit
                               </button>
                               <button
@@ -2610,9 +4690,7 @@ const Dashboard = ({ user, onLogout }) => {
                                 disabled={isMmToCtLoading}
                                 className="px-2 py-1 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white text-xs rounded flex items-center gap-1"
                               >
-                                <span className="material-icons text-xs">
-                                  delete
-                                </span>
+                                <Trash2 size={12} />
                                 Delete
                               </button>
                             </div>
@@ -2627,46 +4705,6 @@ const Dashboard = ({ user, onLogout }) => {
           </>
         )}
       </div>
-
-      {/* Quick Converter - Keep existing functionality */}
-      {/* <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          Quick Converter
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">
-              Diamond Type
-            </label>
-            <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-              <option value="round">Round</option>
-              <option value="fancy">Fancy</option>
-            </select>
-          </div>
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">
-              Size (MM)
-            </label>
-            <input
-              type="number"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Enter size in MM"
-              step="0.01"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">
-              Weight (CT)
-            </label>
-            <input
-              type="text"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-              placeholder="Calculated weight"
-              readOnly
-            />
-          </div>
-        </div>
-      </div> */}
     </div>
   );
 
@@ -2781,9 +4819,7 @@ const Dashboard = ({ user, onLogout }) => {
         {/* Making Charges List Table */}
         {makingCharges.length === 0 ? (
           <div className="text-center py-12 text-gray-500">
-            <span className="material-icons text-4xl text-gray-300 mb-4">
-              list_alt
-            </span>
+            <div className="text-4xl text-gray-300 mb-4">💰</div>
             <p className="text-lg mb-2">No making charges found</p>
             <p className="text-sm">Add making charges using the form above.</p>
           </div>
@@ -2829,6 +4865,14 @@ const Dashboard = ({ user, onLogout }) => {
                   editingMakingCharge &&
                   editingMakingCharge._id === item._id ? (
                     <tr key={item._id} className="bg-blue-50">
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedMakingChargeIds.includes(item._id)}
+                          onChange={() => handleMakingChargeSelection(item._id)}
+                          className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                      </td>
                       <td className="px-4 py-3">
                         <select
                           value={editingMakingCharge.purity}
@@ -2914,6 +4958,14 @@ const Dashboard = ({ user, onLogout }) => {
                       key={item._id}
                       className="hover:bg-gray-50 transition-colors"
                     >
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedMakingChargeIds.includes(item._id)}
+                          onChange={() => handleMakingChargeSelection(item._id)}
+                          className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                      </td>
                       <td className="px-4 py-3 text-sm">{item.purity}</td>
                       <td className="px-4 py-3 text-sm">{item.weightFrom}</td>
                       <td className="px-4 py-3 text-sm">{item.weightTo}</td>
@@ -2948,36 +5000,38 @@ const Dashboard = ({ user, onLogout }) => {
                 )}
               </tbody>
             </table>
-            <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 p-6 mt-8 max-w-sm">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                Minimum Making Charge Configuration
-              </h3>
-              <div className="flex items-center space-x-3">
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={minimumMakingCharge}
-                  onChange={(e) => setMinimumMakingCharge(e.target.value)}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Enter minimum making charge"
-                  disabled={isMinChargeLoading}
-                />
-                <button
-                  onClick={updateMinimumMakingCharge}
-                  disabled={isMinChargeLoading}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium rounded-lg transition-colors"
-                >
-                  {isMinChargeLoading ? "Saving..." : "Save"}
-                </button>
-              </div>
-              <p className="text-xs text-gray-500 mt-2">
-                If calculated making charge is below this minimum, the minimum
-                charge will be applied automatically.
-              </p>
-            </div>
           </div>
         )}
+      </div>
+
+      {/* Minimum Making Charge Configuration */}
+      <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50 p-6 max-w-sm">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+          Minimum Making Charge Configuration
+        </h3>
+        <div className="flex items-center space-x-3">
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={minimumMakingCharge}
+            onChange={(e) => setMinimumMakingCharge(e.target.value)}
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="Enter minimum making charge"
+            disabled={isMinChargeLoading}
+          />
+          <button
+            onClick={updateMinimumMakingCharge}
+            disabled={isMinChargeLoading}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium rounded-lg transition-colors"
+          >
+            {isMinChargeLoading ? "Saving..." : "Save"}
+          </button>
+        </div>
+        <p className="text-xs text-gray-500 mt-2">
+          If calculated making charge is below this minimum, the minimum charge
+          will be applied automatically.
+        </p>
       </div>
     </div>
   );
@@ -2988,6 +5042,7 @@ const Dashboard = ({ user, onLogout }) => {
       <div className="border-b border-gray-200">
         <nav className="-mb-px flex space-x-8">
           {[
+            { id: "shopify-config", name: "Shopify Configuration" },
             { id: "rate-charts", name: "Rate Charts" },
             { id: "mm-to-ct", name: "MM to CT Conversion" },
             { id: "making-charges", name: "Making Charges" },
@@ -3009,6 +5064,7 @@ const Dashboard = ({ user, onLogout }) => {
 
       {/* Configuration Sub-tab Content */}
       <div className="mt-6">
+        {activeConfigTab === "shopify-config" && renderShopifyConfigContent()}
         {activeConfigTab === "rate-charts" && renderRateChartsContent()}
         {activeConfigTab === "mm-to-ct" && renderMmToCtContent()}
         {activeConfigTab === "making-charges" && renderMakingChargesContent()}
@@ -3190,6 +5246,764 @@ const Dashboard = ({ user, onLogout }) => {
                   Update Logo
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Product Modal */}
+      <ProductModal
+        product={currentProduct}
+        isOpen={showProductModal}
+        onClose={() => {
+          setShowProductModal(false);
+          setCurrentProduct(null);
+          setIsEditingProduct(false);
+        }}
+        onSave={handleProductSave}
+        isEditing={isEditingProduct}
+      />
+
+      {/* Add New Product Modal */}
+      {showAddProductModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-gray-900">
+                Add New Product
+              </h2>
+              <button
+                onClick={() => {
+                  setShowAddProductModal(false);
+                  resetNewProductForm();
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Basic Information */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                  Basic Information
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Product Title *
+                    </label>
+                    <input
+                      type="text"
+                      value={newProductForm.title}
+                      onChange={(e) => {
+                        const title = e.target.value;
+                        setNewProductForm((prev) => ({
+                          ...prev,
+                          title,
+                          seo: {
+                            ...prev.seo,
+                            urlHandle:
+                              prev.seo.urlHandle || generateUrlHandle(title),
+                          },
+                        }));
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Enter product title"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Description
+                    </label>
+                    <textarea
+                      value={newProductForm.description}
+                      onChange={(e) =>
+                        setNewProductForm((prev) => ({
+                          ...prev,
+                          description: e.target.value,
+                        }))
+                      }
+                      rows={4}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Enter product description"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Product Type
+                    </label>
+                    <input
+                      type="text"
+                      value={newProductForm.productType}
+                      onChange={(e) =>
+                        setNewProductForm((prev) => ({
+                          ...prev,
+                          productType: e.target.value,
+                        }))
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="e.g., Ring, Necklace, Earrings"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Vendor
+                    </label>
+                    <input
+                      type="text"
+                      value={newProductForm.vendor}
+                      onChange={(e) =>
+                        setNewProductForm((prev) => ({
+                          ...prev,
+                          vendor: e.target.value,
+                        }))
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Enter vendor name"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Tags (comma separated)
+                    </label>
+                    <input
+                      type="text"
+                      value={newProductForm.tags}
+                      onChange={(e) =>
+                        setNewProductForm((prev) => ({
+                          ...prev,
+                          tags: e.target.value,
+                        }))
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="e.g., jewelry, gold, diamond, luxury"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Images */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-medium text-gray-900">
+                    Product Media
+                  </h3>
+                  {newProductForm.media.length < 5 && (
+                    <button
+                      onClick={handleMediaAdd}
+                      className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
+                    >
+                      Add Media (Max 5)
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  {newProductForm.media.map((media, index) => (
+                    <div
+                      key={index}
+                      className="border border-gray-200 rounded-lg p-4 bg-white"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm font-medium text-gray-700">
+                          Media {index + 1}
+                        </span>
+                        {newProductForm.media.length > 1 && (
+                          <button
+                            onClick={() => handleMediaRemove(index)}
+                            className="text-red-600 hover:text-red-800 text-sm"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Upload Method
+                          </label>
+                          <select
+                            value={media.type}
+                            onChange={(e) =>
+                              handleMediaChange(index, "type", e.target.value)
+                            }
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          >
+                            <option value="upload">Upload File</option>
+                            <option value="url">Media URL</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          {media.type === "upload" ? (
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Choose File
+                              </label>
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/jpg,image/png,image/gif,image/webp,video/mp4,video/webm,video/ogg,video/mov,video/avi"
+                                onChange={(e) =>
+                                  handleMediaFileChange(
+                                    index,
+                                    e.target.files[0]
+                                  )
+                                }
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              />
+                              <p className="text-xs text-gray-500 mt-1">
+                                Images: JPEG, PNG, GIF, WebP (max 10MB)
+                                <br />
+                                Videos: MP4, WebM, OGG, MOV, AVI (max 100MB)
+                              </p>
+                            </div>
+                          ) : (
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Media URL
+                              </label>
+                              <input
+                                type="url"
+                                value={media.url}
+                                onChange={(e) => {
+                                  const url = e.target.value;
+                                  handleMediaChange(index, "url", url);
+                                  if (url) {
+                                    handleMediaChange(
+                                      index,
+                                      "mediaType",
+                                      detectMediaTypeFromUrl(url)
+                                    );
+                                  }
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="https://example.com/media.jpg or .mp4"
+                              />
+                              <p className="text-xs text-gray-500 mt-1">
+                                Paste a direct link to an image or video file
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Media Type Indicator */}
+                      {(media.file || media.url) && (
+                        <div className="mt-2">
+                          <span
+                            className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              media.mediaType === "video"
+                                ? "bg-purple-100 text-purple-800"
+                                : "bg-green-100 text-green-800"
+                            }`}
+                          >
+                            {media.mediaType === "video"
+                              ? "🎥 Video"
+                              : "🖼️ Image"}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Media Preview */}
+                      {(media.preview || media.url) && (
+                        <div className="mt-3">
+                          {media.mediaType === "video" ? (
+                            <video
+                              src={media.preview || media.url}
+                              className="w-32 h-24 object-cover rounded-lg border border-gray-200"
+                              controls
+                              muted
+                            >
+                              Your browser does not support the video tag.
+                            </video>
+                          ) : (
+                            <img
+                              src={media.preview || media.url}
+                              alt={`Preview ${index + 1}`}
+                              className="w-24 h-24 object-cover rounded-lg border border-gray-200"
+                            />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Inventory Details */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                  Inventory Details
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Quantity
+                    </label>
+                    <input
+                      type="number"
+                      value={newProductForm.inventory.quantity}
+                      onChange={(e) =>
+                        setNewProductForm((prev) => ({
+                          ...prev,
+                          inventory: {
+                            ...prev.inventory,
+                            quantity: e.target.value,
+                          },
+                        }))
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="0"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      SKU
+                    </label>
+                    <input
+                      type="text"
+                      value={newProductForm.inventory.sku}
+                      onChange={(e) =>
+                        setNewProductForm((prev) => ({
+                          ...prev,
+                          inventory: { ...prev.inventory, sku: e.target.value },
+                        }))
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Enter SKU"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Barcode
+                    </label>
+                    <input
+                      type="text"
+                      value={newProductForm.inventory.barcode}
+                      onChange={(e) =>
+                        setNewProductForm((prev) => ({
+                          ...prev,
+                          inventory: {
+                            ...prev.inventory,
+                            barcode: e.target.value,
+                          },
+                        }))
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Enter barcode"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Weight Configuration */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                  Weight Configuration
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Weight
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={newProductForm.weight.value}
+                      onChange={(e) =>
+                        setNewProductForm((prev) => ({
+                          ...prev,
+                          weight: { ...prev.weight, value: e.target.value },
+                        }))
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="0.00"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Unit
+                    </label>
+                    <select
+                      value={newProductForm.weight.unit}
+                      onChange={(e) =>
+                        setNewProductForm((prev) => ({
+                          ...prev,
+                          weight: { ...prev.weight, unit: e.target.value },
+                        }))
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="kg">Kilograms (kg)</option>
+                      <option value="g">Grams (g)</option>
+                      <option value="oz">Ounces (oz)</option>
+                      <option value="lb">Pounds (lb)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* SEO Configuration */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                  SEO Configuration
+                </h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Page Title
+                    </label>
+                    <input
+                      type="text"
+                      value={newProductForm.seo.pageTitle}
+                      onChange={(e) =>
+                        setNewProductForm((prev) => ({
+                          ...prev,
+                          seo: { ...prev.seo, pageTitle: e.target.value },
+                        }))
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="SEO page title"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Meta Description
+                    </label>
+                    <textarea
+                      value={newProductForm.seo.metaDescription}
+                      onChange={(e) =>
+                        setNewProductForm((prev) => ({
+                          ...prev,
+                          seo: { ...prev.seo, metaDescription: e.target.value },
+                        }))
+                      }
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="SEO meta description"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      URL Handle
+                    </label>
+                    <input
+                      type="text"
+                      value={newProductForm.seo.urlHandle}
+                      onChange={(e) =>
+                        setNewProductForm((prev) => ({
+                          ...prev,
+                          seo: { ...prev.seo, urlHandle: e.target.value },
+                        }))
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="product-url-handle"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Auto-generated from title, but you can customize it
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Pricing Configuration */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                  Pricing Configuration
+                </h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Product price will be calculated automatically based on metal,
+                  diamond, and stone configurations.
+                </p>
+
+                {/* Metal Configuration */}
+                {/* Metal Configuration */}
+                <div className="mb-6">
+                  <h4 className="text-md font-medium text-gray-800 mb-3">
+                    Metal Configuration
+                  </h4>
+                  <div className="bg-white rounded-lg border border-gray-200 p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {/* Metal Type */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Metal Type *
+                        </label>
+                        <select
+                          value={newProductForm.metalConfig.type || ""}
+                          onChange={(e) =>
+                            setNewProductForm((prev) => ({
+                              ...prev,
+                              metalConfig: {
+                                ...prev.metalConfig,
+                                type: e.target.value,
+                                purity:
+                                  e.target.value === "Silver"
+                                    ? ""
+                                    : prev.metalConfig.purity, // Clear purity if Silver
+                              },
+                            }))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="">Select Metal</option>
+                          <option value="Gold">Gold</option>
+                          <option value="Silver">Silver</option>
+                        </select>
+                      </div>
+
+                      {/* Purity - Only show if Gold is selected */}
+                      {newProductForm.metalConfig.type === "Gold" && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Purity *
+                          </label>
+                          <select
+                            value={newProductForm.metalConfig.purity || ""}
+                            onChange={(e) =>
+                              setNewProductForm((prev) => ({
+                                ...prev,
+                                metalConfig: {
+                                  ...prev.metalConfig,
+                                  purity: e.target.value,
+                                },
+                              }))
+                            }
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          >
+                            <option value="">Select Purity</option>
+                            <option value="24k">24K</option>
+                            <option value="22k">22K</option>
+                            <option value="18k">18K</option>
+                            <option value="14k">14K</option>
+                          </select>
+                        </div>
+                      )}
+
+                      {/* Gross Weight */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Gross Weight (g)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={newProductForm.metalConfig.grossWeight || ""}
+                          onChange={(e) =>
+                            setNewProductForm((prev) => ({
+                              ...prev,
+                              metalConfig: {
+                                ...prev.metalConfig,
+                                grossWeight: e.target.value,
+                              },
+                            }))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="0.00"
+                        />
+                      </div>
+
+                      {/* Net Weight */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Net Weight (g)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={newProductForm.metalConfig.netWeight || ""}
+                          onChange={(e) =>
+                            setNewProductForm((prev) => ({
+                              ...prev,
+                              metalConfig: {
+                                ...prev.metalConfig,
+                                netWeight: e.target.value,
+                              },
+                            }))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Diamond Configuration */}
+                {/* Diamond Configuration */}
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-md font-medium text-gray-800">
+                      Diamond Configuration
+                    </h4>
+                    <button
+                      onClick={() => {
+                        if (newProductForm.diamondConfig.length < 4) {
+                          setNewProductForm((prev) => ({
+                            ...prev,
+                            diamondConfig: [
+                              ...prev.diamondConfig,
+                              {
+                                id: Date.now(),
+                                shape: "",
+                                color: "",
+                                clarity: "",
+                                pieces: "",
+                                weightType: "mm", // 'mm' or 'ct'
+                                mmValue: "",
+                                ctValue: "",
+                                totalWeight: 0,
+                                diamondValue: 0,
+                              },
+                            ],
+                          }));
+                        }
+                      }}
+                      disabled={newProductForm.diamondConfig.length >= 4}
+                      className="px-3 py-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-300 text-white text-sm rounded-lg transition-colors"
+                    >
+                      Add Diamond (Max 4)
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    {newProductForm.diamondConfig.length === 0 ? (
+                      <div className="bg-white rounded-lg border border-gray-200 p-4">
+                        <p className="text-sm text-gray-500 italic">
+                          No diamonds added. Click "Add Diamond" to add diamond
+                          configuration.
+                        </p>
+                      </div>
+                    ) : (
+                      newProductForm.diamondConfig.map((diamond, index) => (
+                        <DiamondConfigCard
+                          key={diamond.id}
+                          diamond={diamond}
+                          index={index}
+                          onUpdate={(updatedDiamond) => {
+                            setNewProductForm((prev) => ({
+                              ...prev,
+                              diamondConfig: prev.diamondConfig.map((d) =>
+                                d.id === diamond.id ? updatedDiamond : d
+                              ),
+                            }));
+                          }}
+                          onRemove={() => {
+                            setNewProductForm((prev) => ({
+                              ...prev,
+                              diamondConfig: prev.diamondConfig.filter(
+                                (d) => d.id !== diamond.id
+                              ),
+                            }));
+                          }}
+                        />
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Stone Configuration */}
+                {/* Stone Configuration */}
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-md font-medium text-gray-800">
+                      Stone Configuration
+                    </h4>
+                    <button
+                      onClick={() => {
+                        setNewProductForm((prev) => ({
+                          ...prev,
+                          stoneConfig: [
+                            ...(prev.stoneConfig || []),
+                            {
+                              id: Date.now(),
+                              stoneType: "",
+                              stoneColor: "",
+                              pieces: "",
+                              weight: "", // Weight per stone in gm
+                              totalWeight: 0, // Total weight in gm
+                              stoneValue: 0, // Total value
+                            },
+                          ],
+                        }));
+                      }}
+                      className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-sm rounded-lg transition-colors"
+                    >
+                      Add Stone
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    {!newProductForm.stoneConfig ||
+                    newProductForm.stoneConfig.length === 0 ? (
+                      <div className="bg-white rounded-lg border border-gray-200 p-4">
+                        <p className="text-sm text-gray-500 italic">
+                          No stones added. Click "Add Stone" to add stone
+                          configuration.
+                        </p>
+                      </div>
+                    ) : (
+                      newProductForm.stoneConfig.map((stone, index) => (
+                        <StoneConfigCard
+                          key={stone.id}
+                          stone={stone}
+                          index={index}
+                          onUpdate={(updatedStone) => {
+                            setNewProductForm((prev) => ({
+                              ...prev,
+                              stoneConfig: prev.stoneConfig.map((s) =>
+                                s.id === stone.id ? updatedStone : s
+                              ),
+                            }));
+                          }}
+                          onRemove={() => {
+                            setNewProductForm((prev) => ({
+                              ...prev,
+                              stoneConfig: prev.stoneConfig.filter(
+                                (s) => s.id !== stone.id
+                              ),
+                            }));
+                          }}
+                        />
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowAddProductModal(false);
+                  resetNewProductForm();
+                }}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddProduct}
+                disabled={isAddingProduct || !newProductForm.title.trim()}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium rounded-lg transition-colors"
+              >
+                {isAddingProduct
+                  ? "Adding Product..."
+                  : "Add Product to Shopify"}
+              </button>
             </div>
           </div>
         </div>
