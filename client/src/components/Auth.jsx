@@ -1,35 +1,37 @@
-import React, { useState } from 'react';
-import { Eye, EyeOff, User, Mail, Lock, ArrowRight } from 'lucide-react';
-import axios from 'axios';
+import { useState } from "react";
+import { Eye, EyeOff, User, Mail, Lock, ArrowRight } from "lucide-react";
+import axios from "axios";
 
+// ****************AUTH COMPONENT FOR USER LOGIN AND REGISTRATION**************** //
 const Auth = ({ onLogin }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    password: ''
+    name: "",
+    email: "",
+    password: "",
   });
   const [errors, setErrors] = useState({});
 
+  // ****************VALIDATE FORM FIELDS**************** //
   const validateForm = () => {
     const newErrors = {};
 
     if (!isLogin && !formData.name.trim()) {
-      newErrors.name = 'Name is required';
+      newErrors.name = "Name is required";
     }
 
     if (!formData.email.trim()) {
-      newErrors.email = 'Email is required';
+      newErrors.email = "Email is required";
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Email is invalid';
+      newErrors.email = "Email is invalid";
     }
 
     if (!formData.password) {
-      newErrors.password = 'Password is required';
+      newErrors.password = "Password is required";
     } else if (!isLogin && formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
+      newErrors.password = "Password must be at least 6 characters";
     }
 
     setErrors(newErrors);
@@ -38,39 +40,43 @@ const Auth = ({ onLogin }) => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }));
-    
+
     // Clear error when user starts typing
     if (errors[name]) {
-      setErrors(prev => ({
+      setErrors((prev) => ({
         ...prev,
-        [name]: ''
+        [name]: "",
       }));
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!validateForm()) return;
 
     setLoading(true);
-    
+
     try {
-      const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
-      const response = await axios.post(`http://localhost:5000${endpoint}`, formData);
+      const endpoint = isLogin ? "/api/auth/login" : "/api/auth/register";
+      const response = await axios.post(
+        `http://localhost:5000${endpoint}`,
+        formData
+      );
 
       if (response.status === 200 || response.status === 201) {
         const { token, user } = response.data;
         onLogin(user, token);
       }
     } catch (error) {
-      console.error('Auth error:', error);
-      setErrors({ 
-        submit: error.response?.data?.message || 'Network error. Please try again.' 
+      console.error("Auth error:", error);
+      setErrors({
+        submit:
+          error.response?.data?.message || "Network error. Please try again.",
       });
     } finally {
       setLoading(false);
@@ -79,7 +85,7 @@ const Auth = ({ onLogin }) => {
 
   const toggleAuthMode = () => {
     setIsLogin(!isLogin);
-    setFormData({ name: '', email: '', password: '' });
+    setFormData({ name: "", email: "", password: "" });
     setErrors({});
   };
 
@@ -92,13 +98,12 @@ const Auth = ({ onLogin }) => {
             <User className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            {isLogin ? 'Welcome back' : 'Create account'}
+            {isLogin ? "Welcome!!" : "Create account"}
           </h1>
           <p className="text-gray-600">
-            {isLogin 
-              ? 'Sign in to your account to continue' 
-              : 'Sign up to get started with your account'
-            }
+            {isLogin
+              ? "Sign in to your account to continue"
+              : "Sign up to get started with your account"}
           </p>
         </div>
 
@@ -119,7 +124,7 @@ const Auth = ({ onLogin }) => {
                     value={formData.name}
                     onChange={handleInputChange}
                     className={`w-full pl-12 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
-                      errors.name ? 'border-red-500' : 'border-gray-300'
+                      errors.name ? "border-red-500" : "border-gray-300"
                     }`}
                     placeholder="Enter your full name"
                     disabled={loading}
@@ -144,7 +149,7 @@ const Auth = ({ onLogin }) => {
                   value={formData.email}
                   onChange={handleInputChange}
                   className={`w-full pl-12 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
-                    errors.email ? 'border-red-500' : 'border-gray-300'
+                    errors.email ? "border-red-500" : "border-gray-300"
                   }`}
                   placeholder="Enter your email"
                   disabled={loading}
@@ -163,12 +168,12 @@ const Auth = ({ onLogin }) => {
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
-                  type={showPassword ? 'text' : 'password'}
+                  type={showPassword ? "text" : "password"}
                   name="password"
                   value={formData.password}
                   onChange={handleInputChange}
                   className={`w-full pl-12 pr-12 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
-                    errors.password ? 'border-red-500' : 'border-gray-300'
+                    errors.password ? "border-red-500" : "border-gray-300"
                   }`}
                   placeholder="Enter your password"
                   disabled={loading}
@@ -179,7 +184,11 @@ const Auth = ({ onLogin }) => {
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                   disabled={loading}
                 >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  {showPassword ? (
+                    <EyeOff className="w-5 h-5" />
+                  ) : (
+                    <Eye className="w-5 h-5" />
+                  )}
                 </button>
               </div>
               {errors.password && (
@@ -204,7 +213,7 @@ const Auth = ({ onLogin }) => {
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
-                  <span>{isLogin ? 'Sign In' : 'Create Account'}</span>
+                  <span>{isLogin ? "Sign In" : "Create Account"}</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -214,13 +223,15 @@ const Auth = ({ onLogin }) => {
           {/* Toggle auth mode */}
           <div className="mt-6 text-center">
             <p className="text-gray-600">
-              {isLogin ? "Don't have an account? " : "Already have an account? "}
+              {isLogin
+                ? "Don't have an account? "
+                : "Already have an account? "}
               <button
                 onClick={toggleAuthMode}
                 className="text-blue-600 hover:text-blue-700 font-medium transition-colors"
                 disabled={loading}
               >
-                {isLogin ? 'Sign up' : 'Sign in'}
+                {isLogin ? "Sign up" : "Sign in"}
               </button>
             </p>
           </div>

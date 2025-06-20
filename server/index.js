@@ -6,14 +6,11 @@ import jwt from "jsonwebtoken";
 import axios from "axios";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
-import * as csvParse from "csv-parse";
-
 import dotenv from "dotenv";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
 
-// Load environment variables
 dotenv.config();
 
 const app = express();
@@ -535,7 +532,8 @@ const upload = multer({
   },
 });
 
-// Helper function to convert troy ounce to grams and calculate different karat prices
+// Helper function to convert troy ounce to grams and calculate different karat prices //
+
 const convertPrices = (goldPricePerOunce, silverPricePerOunce) => {
   // 1 troy ounce = 31.1035 grams
   const TROY_OUNCE_TO_GRAMS = 31.1035;
@@ -555,7 +553,8 @@ const convertPrices = (goldPricePerOunce, silverPricePerOunce) => {
   };
 };
 
-// Shopify API Helper Functions
+// ****************Shopify API Helper Functions**************** //
+
 const shopifyGraphQL = async (query, variables = {}) => {
   try {
     const config = await ShopifyConfig.findOne({ isActive: true });
@@ -588,7 +587,8 @@ const shopifyGraphQL = async (query, variables = {}) => {
   }
 };
 
-// GraphQL Queries
+// ****************GraphQL Queries**************** //
+
 const GET_PRODUCTS_QUERY = `
   query getProducts($first: Int, $after: String) {
     products(first: $first, after: $after) {
@@ -672,7 +672,7 @@ const CREATE_PRODUCT_MUTATION = `
   }
 `;
 
-// Routes
+// ****************ROUTES**************** //
 
 // Register
 app.post("/api/auth/register", authLimiter, validateInput, async (req, res) => {
@@ -841,7 +841,7 @@ app.post(
   }
 );
 
-// Get current logo route - FIXED
+// Get current logo route
 app.get("/api/logo", async (req, res) => {
   try {
     // First try to get logo info from database
@@ -883,7 +883,7 @@ app.get("/api/logo", async (req, res) => {
   }
 });
 
-// METAL PRICES ROUTES
+// ****************METAL PRICES ROUTES**************** //
 
 // Get current metal prices
 
@@ -923,7 +923,7 @@ app.get("/api/metal-prices", async (req, res) => {
   }
 });
 
-// Update metal prices - Authentication required (Using findOneAndUpdate)
+// Update metal prices
 app.put("/api/metal-prices", authenticateToken, async (req, res) => {
   try {
     const { gold24K, gold22K, gold18K, gold14K, silver, platinum, palladium } =
@@ -991,7 +991,7 @@ app.put("/api/metal-prices", authenticateToken, async (req, res) => {
   }
 });
 
-// Get metal prices history - Authentication required
+// Get metal prices history
 app.get("/api/metal-prices/history", authenticateToken, async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
@@ -1182,7 +1182,7 @@ app.post("/api/metal-prices/sync-live", authenticateToken, async (req, res) => {
   }
 });
 
-// DIAMOND PRICES ROUTES - Add these after your metal prices routes
+// ****************DIAMOND PRICES ROUTES**************** //
 
 // Get current diamond prices
 app.get("/api/diamond-prices", async (req, res) => {
@@ -1343,7 +1343,7 @@ app.delete("/api/diamond-prices/:id", authenticateToken, async (req, res) => {
   }
 });
 
-// STONE PRICES ROUTES
+// ****************STONE PRICES ROUTES**************** //
 
 // Get current stone prices
 app.get("/api/stone-prices", async (req, res) => {
@@ -1504,7 +1504,7 @@ app.delete("/api/stone-prices/:id", authenticateToken, async (req, res) => {
   }
 });
 
-// MM TO CT CONVERSION ROUTES
+// ****************MM TO CT CONVERSION ROUTES**************** //
 
 // Get all MM to CT conversions
 app.get("/api/mm-to-ct", async (req, res) => {
@@ -1671,231 +1671,7 @@ app.delete("/api/mm-to-ct/:id", authenticateToken, async (req, res) => {
   }
 });
 
-// Bulk upload MM to CT conversions from CSV
-app.post(
-  "/api/mm-to-ct/bulk-upload",
-  authenticateToken,
-  upload.single("csvFile"),
-  async (req, res) => {
-    try {
-      // Check if a file was uploaded
-      if (!req.file) {
-        return res.status(400).json({
-          success: false,
-          message: "No CSV file uploaded",
-        });
-      }
-
-      // Read the CSV file
-      const csvData = fs.readFileSync(req.file.path, "utf8");
-
-      // Use csv-parse to parse CSV content with header
-      const records = csvParse.parse(csvData, {
-        columns: true,
-        skip_empty_lines: true,
-        trim: true,
-      });
-
-      // Log the parsed records for debugging
-      console.log("Parsed CSV Records:", records);
-
-      // Check if records are valid
-      if (!Array.isArray(records) || records.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: "CSV file must contain at least one data row",
-        });
-      }
-
-      const results = [];
-      const errors = [];
-
-      // Process each record
-      for (let i = 0; i < records.length; i++) {
-        const row = records[i];
-        // Extract and normalize fields
-        const typeRaw = row.type;
-        const sizeRaw = row.size;
-        const caratRaw = row.carat;
-
-        // Check for missing fields
-        if (!typeRaw || !sizeRaw || !caratRaw) {
-          errors.push(`Row ${i + 2}: Missing required fields`);
-          continue;
-        }
-
-        const type = typeRaw.toLowerCase();
-        const sizeNum = parseFloat(sizeRaw);
-        const caratNum = parseFloat(caratRaw);
-
-        // Validate the type
-        if (!["round", "fancy"].includes(type)) {
-          errors.push(`Row ${i + 2}: Type must be 'round' or 'fancy'`);
-          continue;
-        }
-
-        // Validate size and carat
-        if (
-          isNaN(sizeNum) ||
-          isNaN(caratNum) ||
-          sizeNum <= 0 ||
-          caratNum <= 0
-        ) {
-          errors.push(
-            `Row ${i + 2}: Size and carat must be valid positive numbers`
-          );
-          continue;
-        }
-
-        try {
-          // Check for existing entry
-          const existingEntry = await MmToCt.findOne({ type, size: sizeNum });
-
-          if (existingEntry) {
-            existingEntry.carat = caratNum;
-            existingEntry.updatedBy = req.user._id;
-            await existingEntry.save();
-            results.push({
-              action: "updated",
-              type,
-              size: sizeNum,
-              carat: caratNum,
-            });
-          } else {
-            const conversion = new MmToCt({
-              type,
-              size: sizeNum,
-              carat: caratNum,
-              updatedBy: req.user._id,
-            });
-            await conversion.save();
-            results.push({
-              action: "created",
-              type,
-              size: sizeNum,
-              carat: caratNum,
-            });
-          }
-        } catch (dbError) {
-          errors.push(`Row ${i + 2}: Database error - ${dbError.message}`);
-        }
-      }
-
-      // Remove uploaded file
-      fs.unlinkSync(req.file.path);
-
-      // Respond with results and errors
-      res.json({
-        success: true,
-        message: `Bulk upload completed. ${results.length} entries processed.`,
-        results,
-        errors,
-      });
-    } catch (error) {
-      console.error("Error processing bulk upload:", error);
-
-      // Clean up uploaded file if it exists
-      if (req.file && fs.existsSync(req.file.path)) {
-        fs.unlinkSync(req.file.path);
-      }
-
-      res.status(500).json({
-        success: false,
-        message: "Failed to process bulk upload",
-        error: error.message,
-      });
-    }
-  }
-);
-
-// Download CSV template
-app.get("/api/mm-to-ct/template", (req, res) => {
-  try {
-    const csvContent = "type,size,carat\nround,1.0,0.005\nfancy,1.5,0.015";
-
-    res.setHeader("Content-Type", "text/csv");
-    res.setHeader(
-      "Content-Disposition",
-      'attachment; filename="mm-to-ct-template.csv"'
-    );
-    res.send(csvContent);
-  } catch (error) {
-    console.error("Error generating template:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to generate template",
-    });
-  }
-});
-
-// Download selected entries as CSV
-app.post("/api/mm-to-ct/download", authenticateToken, async (req, res) => {
-  try {
-    const { ids } = req.body;
-
-    let conversions;
-    if (ids && ids.length > 0) {
-      // Download selected entries
-      conversions = await MmToCt.find({ _id: { $in: ids } }).sort({
-        type: 1,
-        size: 1,
-      });
-    } else {
-      // Download all entries
-      conversions = await MmToCt.find().sort({ type: 1, size: 1 });
-    }
-
-    let csvContent = "type,size,carat\n";
-    conversions.forEach((conversion) => {
-      csvContent += `${conversion.type},${conversion.size},${conversion.carat}\n`;
-    });
-
-    res.setHeader("Content-Type", "text/csv");
-    res.setHeader(
-      "Content-Disposition",
-      'attachment; filename="mm-to-ct-data.csv"'
-    );
-    res.send(csvContent);
-  } catch (error) {
-    console.error("Error downloading CSV:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to download CSV",
-      error: error.message,
-    });
-  }
-});
-
-// Delete multiple MM to CT conversion entries
-app.delete("/api/mm-to-ct/bulk-delete", authenticateToken, async (req, res) => {
-  try {
-    const { ids } = req.body;
-
-    if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "No IDs provided for deletion",
-      });
-    }
-
-    const result = await MmToCt.deleteMany({ _id: { $in: ids } });
-
-    res.json({
-      success: true,
-      message: `${result.deletedCount} entries deleted successfully`,
-      deletedCount: result.deletedCount,
-    });
-  } catch (error) {
-    console.error("Error in bulk delete:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to delete entries",
-      error: error.message,
-    });
-  }
-});
-
-// Making Charges routes
+// ****************MAKING CHARGES ROUTES**************** //
 
 app.get("/api/making-charges", async (req, res) => {
   try {
@@ -2127,7 +1903,7 @@ app.put(
   }
 );
 
-// SHOPIFY API ROUTES
+// ****************SHOPIFY API ROUTES**************** //
 
 // Shopify configuration route
 app.post("/api/shopify/config", authenticateToken, async (req, res) => {
@@ -2414,261 +2190,293 @@ app.post("/api/shopify/sync-products", authenticateToken, async (req, res) => {
   }
 });
 
+// ADD PRODUCT TO SHOPIFY
+// This route allows authenticated users to add a new product to Shopify
+// *****************************************************************************************************
 
-// Add new product to Shopify
-// Add new product to Shopify - CORRECTED VERSION
-app.post("/api/shopify/add-product", authenticateToken, upload.array('images', 5), async (req, res) => {
-  try {
-    console.log("Received product creation request");
-    console.log("Body:", req.body);
-    console.log("Files:", req.files);
-
-     const { 
-      title, 
-      description, 
-      productType, 
-      vendor, 
-      tags,
-      inventory,
-      weight,
-      seo,
-      metalConfig,
-      diamondConfig,
-      stoneConfig,
-      mediaUrls
-    } = req.body;
-
-    // Validation
-    if (!title || !title.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: "Product title is required"
-      });
-    }
-
-    // Parse JSON strings safely
-    let inventoryData = {};
-    let weightData = {};
-    let seoData = {};
-    let imageUrlsArray = [];
-
+app.post(
+  "/api/shopify/add-product",
+  authenticateToken,
+  upload.array("images", 5),
+  async (req, res) => {
     try {
-      inventoryData = inventory ? JSON.parse(inventory) : {};
-      weightData = weight ? JSON.parse(weight) : {};
-      seoData = seo ? JSON.parse(seo) : {};
-      imageUrlsArray = imageUrls ? JSON.parse(imageUrls) : [];
-    } catch (parseError) {
-      console.error("JSON parsing error:", parseError);
-      return res.status(400).json({
-        success: false,
-        message: "Invalid JSON data in request"
-      });
-    }
+      console.log("Received product creation request");
+      console.log("Body:", req.body);
+      console.log("Files:", req.files);
 
-    // Get Shopify configuration
-    const config = await ShopifyConfig.findOne({ isActive: true });
-    if (!config) {
-      return res.status(400).json({
-        success: false,
-        message: "Shopify configuration not found. Please configure Shopify first."
-      });
-    }
+      const {
+        title,
+        description,
+        productType,
+        vendor,
+        tags,
+        inventory,
+        weight,
+        seo,
+        metalConfig,
+        diamondConfig,
+        stoneConfig,
+        mediaUrls,
+      } = req.body;
 
-    // Process images
-    const mediaArray = [];
-    
-    // Add image URLs
-    if (mediaUrls) {
-      const mediaUrlsArray = JSON.parse(mediaUrls);
-      mediaUrlsArray.forEach(mediaItem => {
-        if (mediaItem.url && mediaItem.url.trim()) {
-          if (mediaItem.type === 'video') {
-            // For videos, Shopify might need special handling or you might need to store them elsewhere
-            console.log("Video URL detected:", mediaItem.url);
-            // Add video handling logic here
-          } else {
+      // Validation
+      if (!title || !title.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "Product title is required",
+        });
+      }
+
+      // Parse JSON strings safely
+      let inventoryData = {};
+      let weightData = {};
+      let seoData = {};
+      let imageUrlsArray = [];
+
+      try {
+        inventoryData = inventory ? JSON.parse(inventory) : {};
+        weightData = weight ? JSON.parse(weight) : {};
+        seoData = seo ? JSON.parse(seo) : {};
+        imageUrlsArray = imageUrls ? JSON.parse(imageUrls) : [];
+      } catch (parseError) {
+        console.error("JSON parsing error:", parseError);
+        return res.status(400).json({
+          success: false,
+          message: "Invalid JSON data in request",
+        });
+      }
+
+      // Get Shopify configuration
+      const config = await ShopifyConfig.findOne({ isActive: true });
+      if (!config) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Shopify configuration not found. Please configure Shopify first.",
+        });
+      }
+
+      // Process images
+      const mediaArray = [];
+
+      // Add image URLs
+      if (mediaUrls) {
+        const mediaUrlsArray = JSON.parse(mediaUrls);
+        mediaUrlsArray.forEach((mediaItem) => {
+          if (mediaItem.url && mediaItem.url.trim()) {
+            if (mediaItem.type === "video") {
+              // For videos, Shopify might need special handling or you might need to store them elsewhere
+              console.log("Video URL detected:", mediaItem.url);
+              // Add video handling logic here
+            } else {
+              mediaArray.push({
+                src: mediaItem.url.trim(),
+                alt: title,
+              });
+            }
+          }
+        });
+      }
+
+      // For file uploads, we'll use placeholder URLs for now
+      if (req.files && req.files.length > 0) {
+        req.files.forEach((file) => {
+          if (file.mimetype.startsWith("image/")) {
             mediaArray.push({
-              src: mediaItem.url.trim(),
-              alt: title
+              src: `https://via.placeholder.com/400x400?text=${encodeURIComponent(
+                title
+              )}`,
+              alt: title,
+            });
+          } else if (file.mimetype.startsWith("video/")) {
+            // Handle video uploads - you might need to upload to a video hosting service
+            console.log("Video file uploaded:", file.originalname);
+            // Add video file handling logic here
+          }
+        });
+      }
+
+      // Prepare tags array
+      const tagsArray = tags
+        ? tags
+            .split(",")
+            .map((tag) => tag.trim())
+            .filter((tag) => tag)
+        : [];
+
+      // Generate handle from title
+      const handle = (seoData.urlHandle || title)
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/-+/g, "-")
+        .trim();
+
+      // Convert weight unit to Shopify REST API format (lowercase)
+      const weightUnitMap = {
+        kg: "kg",
+        g: "g",
+        oz: "oz",
+        lb: "lb",
+      };
+
+      const shopifyWeightUnit = weightUnitMap[weightData.unit] || "kg";
+
+      // Create product using Shopify REST API
+      const productData = {
+        product: {
+          title: title.trim(),
+          body_html: description || "",
+          product_type: productType || "",
+          vendor: vendor || "",
+          tags: tagsArray.join(", "),
+          handle: handle,
+          status: "active",
+          published: true,
+          images: mediaArray,
+          variants: [
+            {
+              title: "Default Title",
+              price: "0.00", // Default price, will be calculated later
+              inventory_quantity: parseInt(inventoryData.quantity) || 0,
+              sku: inventoryData.sku || "",
+              barcode: inventoryData.barcode || "",
+              weight: parseFloat(weightData.value) || 0,
+              weight_unit: shopifyWeightUnit,
+              inventory_management: "shopify",
+              inventory_policy: "deny",
+            },
+          ],
+          options: [
+            {
+              name: "Title",
+              values: ["Default Title"],
+            },
+          ],
+        },
+      };
+
+      // Add images if any
+      if (imageArray.length > 0) {
+        productData.product.images = imageArray;
+      }
+
+      console.log(
+        "Sending to Shopify REST API:",
+        JSON.stringify(productData, null, 2)
+      );
+
+      const response = await axios.post(
+        `https://${config.storeUrl}/admin/api/${
+          config.apiVersion || "2024-01"
+        }/products.json`,
+        productData,
+        {
+          headers: {
+            "X-Shopify-Access-Token": config.accessToken,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      const createdProduct = response.data.product;
+      console.log("Product created successfully:", createdProduct.id);
+
+      // Update SEO if provided
+      if (seoData.pageTitle || seoData.metaDescription) {
+        try {
+          const seoUpdateData = {
+            product: {
+              id: createdProduct.id,
+              metafields: [],
+            },
+          };
+
+          if (seoData.pageTitle) {
+            seoUpdateData.product.metafields.push({
+              namespace: "seo",
+              key: "title_tag",
+              value: seoData.pageTitle,
+              type: "single_line_text_field",
             });
           }
+
+          if (seoData.metaDescription) {
+            seoUpdateData.product.metafields.push({
+              namespace: "seo",
+              key: "description_tag",
+              value: seoData.metaDescription,
+              type: "multi_line_text_field",
+            });
+          }
+
+          // Update product with SEO data
+          await axios.put(
+            `https://${config.storeUrl}/admin/api/${
+              config.apiVersion || "2024-01"
+            }/products/${createdProduct.id}.json`,
+            seoUpdateData,
+            {
+              headers: {
+                "X-Shopify-Access-Token": config.accessToken,
+                "Content-Type": "application/json",
+              },
+            }
+          );
+        } catch (seoError) {
+          console.error("Error updating SEO data:", seoError);
+          // Continue even if SEO update fails
         }
-      });
-    }
-
-    // For file uploads, we'll use placeholder URLs for now
-    if (req.files && req.files.length > 0) {
-      req.files.forEach(file => {
-        if (file.mimetype.startsWith('image/')) {
-          mediaArray.push({
-            src: `https://via.placeholder.com/400x400?text=${encodeURIComponent(title)}`,
-            alt: title
-          });
-        } else if (file.mimetype.startsWith('video/')) {
-          // Handle video uploads - you might need to upload to a video hosting service
-          console.log("Video file uploaded:", file.originalname);
-          // Add video file handling logic here
-        }
-      });
-    }
-
-    // Prepare tags array
-    const tagsArray = tags ? tags.split(',').map(tag => tag.trim()).filter(tag => tag) : [];
-
-    // Generate handle from title
-    const handle = (seoData.urlHandle || title)
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .trim();
-
-    // Convert weight unit to Shopify REST API format (lowercase)
-    const weightUnitMap = {
-      'kg': 'kg',
-      'g': 'g', 
-      'oz': 'oz',
-      'lb': 'lb'
-    };
-
-    const shopifyWeightUnit = weightUnitMap[weightData.unit] || 'kg';
-
-    // Create product using Shopify REST API
-    const productData = {
-      product: {
-        title: title.trim(),
-        body_html: description || '',
-        product_type: productType || '',
-        vendor: vendor || '',
-        tags: tagsArray.join(', '),
-        handle: handle,
-        status: 'active',
-        published: true,
-        images: mediaArray,
-        variants: [{
-          title: "Default Title",
-          price: "0.00", // Default price, will be calculated later
-          inventory_quantity: parseInt(inventoryData.quantity) || 0,
-          sku: inventoryData.sku || '',
-          barcode: inventoryData.barcode || '',
-          weight: parseFloat(weightData.value) || 0,
-          weight_unit: shopifyWeightUnit,
-          inventory_management: 'shopify',
-          inventory_policy: 'deny'
-        }],
-        options: [{
-          name: "Title",
-          values: ["Default Title"]
-        }]
       }
-    };
 
-    // Add images if any
-    if (imageArray.length > 0) {
-      productData.product.images = imageArray;
-    }
-
-    console.log("Sending to Shopify REST API:", JSON.stringify(productData, null, 2));
-
-    const response = await axios.post(
-      `https://${config.storeUrl}/admin/api/${config.apiVersion || '2024-01'}/products.json`,
-      productData,
-      {
-        headers: {
-          "X-Shopify-Access-Token": config.accessToken,
-          "Content-Type": "application/json",
+      res.json({
+        success: true,
+        message: "Product created successfully in Shopify",
+        product: {
+          id: createdProduct.id,
+          title: createdProduct.title,
+          handle: createdProduct.handle,
+          status: createdProduct.status,
         },
-      }
-    );
+        shopifyUrl: `https://${config.storeUrl.replace(
+          ".myshopify.com",
+          ""
+        )}.myshopify.com/admin/products/${createdProduct.id}`,
+      });
+    } catch (error) {
+      console.error("Error creating product:", error);
+      console.error("Error response:", error.response?.data);
 
-    const createdProduct = response.data.product;
-    console.log("Product created successfully:", createdProduct.id);
-
-    // Update SEO if provided
-    if (seoData.pageTitle || seoData.metaDescription) {
-      try {
-        const seoUpdateData = {
-          product: {
-            id: createdProduct.id,
-            metafields: []
-          }
-        };
-
-        if (seoData.pageTitle) {
-          seoUpdateData.product.metafields.push({
-            namespace: "seo",
-            key: "title_tag",
-            value: seoData.pageTitle,
-            type: "single_line_text_field"
-          });
+      // Handle specific Shopify API errors
+      let errorMessage = "Failed to create product";
+      if (error.response?.data?.errors) {
+        const shopifyErrors = error.response.data.errors;
+        if (typeof shopifyErrors === "object") {
+          errorMessage = Object.entries(shopifyErrors)
+            .map(
+              ([field, messages]) =>
+                `${field}: ${
+                  Array.isArray(messages) ? messages.join(", ") : messages
+                }`
+            )
+            .join("; ");
+        } else {
+          errorMessage = shopifyErrors;
         }
-
-        if (seoData.metaDescription) {
-          seoUpdateData.product.metafields.push({
-            namespace: "seo", 
-            key: "description_tag",
-            value: seoData.metaDescription,
-            type: "multi_line_text_field"
-          });
-        }
-
-        // Update product with SEO data
-        await axios.put(
-          `https://${config.storeUrl}/admin/api/${config.apiVersion || '2024-01'}/products/${createdProduct.id}.json`,
-          seoUpdateData,
-          {
-            headers: {
-              "X-Shopify-Access-Token": config.accessToken,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-      } catch (seoError) {
-        console.error("Error updating SEO data:", seoError);
-        // Continue even if SEO update fails
       }
-    }
 
-    res.json({
-      success: true,
-      message: "Product created successfully in Shopify",
-      product: {
-        id: createdProduct.id,
-        title: createdProduct.title,
-        handle: createdProduct.handle,
-        status: createdProduct.status
-      },
-      shopifyUrl: `https://${config.storeUrl.replace('.myshopify.com', '')}.myshopify.com/admin/products/${createdProduct.id}`
-    });
-
-  } catch (error) {
-    console.error("Error creating product:", error);
-    console.error("Error response:", error.response?.data);
-    
-    // Handle specific Shopify API errors
-    let errorMessage = "Failed to create product";
-    if (error.response?.data?.errors) {
-      const shopifyErrors = error.response.data.errors;
-      if (typeof shopifyErrors === 'object') {
-        errorMessage = Object.entries(shopifyErrors)
-          .map(([field, messages]) => `${field}: ${Array.isArray(messages) ? messages.join(', ') : messages}`)
-          .join('; ');
-      } else {
-        errorMessage = shopifyErrors;
-      }
+      res.status(500).json({
+        success: false,
+        message: errorMessage,
+        error: error.message,
+        details: error.response?.data || "No additional details",
+      });
     }
-    
-    res.status(500).json({
-      success: false,
-      message: errorMessage,
-      error: error.message,
-      details: error.response?.data || "No additional details"
-    });
   }
-});
+);
 
+// ****************GET PRODUCTS (WITH PAGINATION AND FILTERING)**************** //
 
-// Get products (with pagination and filtering)
 app.get("/api/shopify/products", authenticateToken, async (req, res) => {
   try {
     const {
@@ -2735,7 +2543,7 @@ app.get("/api/shopify/products", authenticateToken, async (req, res) => {
   }
 });
 
-// Get single product
+// GET SINGLE PRODUCT
 app.get("/api/shopify/products/:id", authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -2765,7 +2573,7 @@ app.get("/api/shopify/products/:id", authenticateToken, async (req, res) => {
   }
 });
 
-// Update product in Shopify
+// UPDATE PRODUCT IN SHOPIFY
 app.put("/api/shopify/products/:id", authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -2831,7 +2639,7 @@ app.put("/api/shopify/products/:id", authenticateToken, async (req, res) => {
   }
 });
 
-// Get sync status
+// GET SYNC STATUS
 app.get("/api/shopify/sync-status", authenticateToken, async (req, res) => {
   try {
     const config = await ShopifyConfig.findOne({ isActive: true });
@@ -2855,6 +2663,7 @@ app.get("/api/shopify/sync-status", authenticateToken, async (req, res) => {
   }
 });
 
+// ****************MONGODB CONNECTION AND SERVER SETUP**************** //
 mongoose
   .connect(process.env.MONGODB_URI)
   .then(() => {
