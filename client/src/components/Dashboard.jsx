@@ -759,73 +759,124 @@ const DiamondConfigCard = memo(
   }
 );
 
-const StoneConfigCard = memo(({ stone, index, onUpdate, onRemove }) => {
-  const calculateStoneValues = (updatedStone) => {
-    const pieces = parseInt(updatedStone.pieces) || 0;
-    const weight = parseFloat(updatedStone.weight) || 0;
-    const totalWeight = pieces * weight;
+const StoneConfigCard = memo(({ stone, index, onUpdate, onRemove, stonePricesData = [] }) => {
+  
+  // Function to get rate per gram from database
+  const getRatePerGram = (totalWeight, stoneType) => {
+    if (!totalWeight || !stonePricesData.length) return 0;
+    
+    const numericWeight = parseFloat(totalWeight);
+    if (isNaN(numericWeight)) return 0;
+    
+    const stoneTypeLower = stoneType.toLowerCase();
+    
+    // Filter prices for the specific stone type
+    const typePrices = stonePricesData.filter(
+      (item) => item.stoneType && item.stoneType.toLowerCase() === stoneTypeLower
+    );
+    
+    if (typePrices.length === 0) {
+      throw new Error(`No price data found for ${stoneType} stones`);
+    }
+    
+    // Find the weight range that contains our total weight
+    const priceEntry = typePrices.find(
+      (item) => 
+        numericWeight >= (item.weightFrom || 0) && 
+        numericWeight <= (item.weightTo || 0)
+    );
+    
+    if (!priceEntry) {
+      const ranges = typePrices.map(p => `${p.weightFrom || 0}-${p.weightTo || 0}gm`).join(', ');
+      throw new Error(
+        `Weight ${totalWeight}gm falls outside available price ranges for ${stoneType} stones. Available ranges: ${ranges}`
+      );
+    }
+    
+    return priceEntry.rate || 0;
+  };
 
-    // PLACEHOLDER LOGIC FOR CALCULATING STONE VALUE BASED ON STONE RATE CHART
+  // Calculate stone value with proper null checking
+  const calculateStoneValue = (updatedStone) => {
+    try {
+      // Safely parse numbers with fallbacks
+      const pieces = parseInt(updatedStone.pieces || 0) || 0;
+      const weightPerStone = parseFloat(updatedStone.weightPerStone || 0) || 0;
+      const totalWeight = pieces * weightPerStone;
 
-    const getStoneRate = (stoneType, totalWeight) => {
-      // PLACEHOLDER RATES, SHOULD MATCH EXACT STONE RATE BASED ON WEIGHT RANGE
-      const rates = {
-        Gemstone: 100, // ₹ per gram
-        Moissanite: 150, // ₹ per gram
+      const baseUpdate = {
+        ...updatedStone,
+        totalWeight: isNaN(totalWeight) ? "0.000" : totalWeight.toFixed(3),
       };
-      return rates[stoneType] || 0;
-    };
 
-    const ratePerGram = getStoneRate(updatedStone.stoneType, totalWeight);
-    const stoneValue = totalWeight * ratePerGram;
+      // If no total weight or no stone type, return with zero values
+      if (totalWeight === 0 || !updatedStone.stoneType || !updatedStone.stoneType.trim()) {
+        return {
+          ...baseUpdate,
+          stoneValue: "0.00",
+          calculationError: null,
+          rate: "0.00",
+        };
+      }
 
-    return {
-      ...updatedStone,
-      totalWeight: totalWeight.toFixed(3),
-      stoneValue: stoneValue.toFixed(2),
-    };
+      // Check if we have stone prices data
+      if (!stonePricesData || stonePricesData.length === 0) {
+        return {
+          ...baseUpdate,
+          stoneValue: "0.00",
+          calculationError: "Stone price data not available",
+          rate: "0.00",
+        };
+      }
+
+      // Get rate per gram from database
+      const rate = getRatePerGram(totalWeight, updatedStone.stoneType);
+      const stoneValue = totalWeight * rate;
+
+      return {
+        ...baseUpdate,
+        stoneValue: isNaN(stoneValue) ? "0.00" : stoneValue.toFixed(2),
+        calculationError: null,
+        rate: isNaN(rate) ? "0.00" : rate.toFixed(2),
+      };
+    } catch (error) {
+      // Safe fallback calculation
+      const pieces = parseInt(updatedStone.pieces || 0) || 0;
+      const weightPerStone = parseFloat(updatedStone.weightPerStone || 0) || 0;
+      const totalWeight = pieces * weightPerStone;
+
+      return {
+        ...updatedStone,
+        totalWeight: isNaN(totalWeight) ? "0.000" : totalWeight.toFixed(3),
+        stoneValue: "0.00",
+        calculationError: error.message,
+        rate: "0.00",
+      };
+    }
   };
 
   const handleFieldChange = (field, value) => {
+    console.log(`Field ${field} changed to:`, value);
+    
     let updatedStone = { ...stone, [field]: value };
 
-    // RECALCULATE VALUES WHEN PIECES, WEIGHT, OR STONE TYPE CHANGES
-    if (field === "pieces" || field === "weight" || field === "stoneType") {
-      updatedStone = calculateStoneValues(updatedStone);
+    // Always recalculate when pieces or weightPerStone changes
+    if (field === "pieces" || field === "weightPerStone") {
+      const pieces = parseInt(field === "pieces" ? (value || 0) : (stone.pieces || 0)) || 0;
+      const weightPerStone = parseFloat(field === "weightPerStone" ? (value || 0) : (stone.weightPerStone || 0)) || 0;
+      const totalWeight = pieces * weightPerStone;
+      
+      updatedStone.totalWeight = isNaN(totalWeight) ? "0.000" : totalWeight.toFixed(3);
+      console.log(`Calculated total weight: ${totalWeight}`);
+    }
+
+    // Recalculate stone value when relevant fields change
+    if (["pieces", "weightPerStone", "stoneType"].includes(field)) {
+      updatedStone = calculateStoneValue(updatedStone);
+      console.log(`Updated stone:`, updatedStone);
     }
 
     onUpdate(updatedStone);
-  };
-
-  // Stone color options based on type
-  const getColorOptions = (stoneType) => {
-    const colorOptions = {
-      Gemstone: [
-        "Red",
-        "Blue",
-        "Green",
-        "Yellow",
-        "Purple",
-        "Pink",
-        "Orange",
-        "White",
-        "Black",
-        "Clear",
-        "Multi-Color",
-      ],
-      Moissanite: [
-        "Colorless",
-        "Near Colorless",
-        "Faint Yellow",
-        "Light Yellow",
-        "Yellow",
-        "Blue",
-        "Green",
-        "Gray",
-        "Black",
-      ],
-    };
-    return colorOptions[stoneType] || [];
   };
 
   return (
@@ -842,16 +893,24 @@ const StoneConfigCard = memo(({ stone, index, onUpdate, onRemove }) => {
         </button>
       </div>
 
+      {/* Show calculation error if any */}
+      {stone.calculationError && (
+        <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+          {stone.calculationError}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {/* Stone Type */}
+        {/* Stone Type - Updated with your available types */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Stone Type
+            Stone Type *
           </label>
           <select
-            value={stone.stoneType}
+            value={stone.stoneType || ""}
             onChange={(e) => handleFieldChange("stoneType", e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            required
           >
             <option value="">Select Stone Type</option>
             <option value="Gemstone">Gemstone</option>
@@ -859,59 +918,68 @@ const StoneConfigCard = memo(({ stone, index, onUpdate, onRemove }) => {
           </select>
         </div>
 
-        {/* Stone Color */}
+        {/* Color */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Stone Color
-          </label>
-          <select
-            value={stone.stoneColor}
-            onChange={(e) => handleFieldChange("stoneColor", e.target.value)}
-            disabled={!stone.stoneType}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 disabled:bg-gray-100"
-          >
-            <option value="">Select Color</option>
-            {getColorOptions(stone.stoneType).map((color) => (
-              <option key={color} value={color}>
-                {color}
-              </option>
-            ))}
-          </select>
-          {!stone.stoneType && (
-            <p className="text-xs text-gray-500 mt-1">
-              Select stone type first
-            </p>
-          )}
-        </div>
-
-        {/* Number of Pieces */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            No. of Pieces
+            Color
           </label>
           <input
-            type="number"
-            value={stone.pieces}
-            onChange={(e) => handleFieldChange("pieces", e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-            placeholder="0"
-            min="1"
+            type="text"
+            value={stone.color || ""}
+            onChange={(e) => handleFieldChange("color", e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="Enter color"
           />
         </div>
 
-        {/* Weight per Stone */}
+        {/* Clarity */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Weight per Stone (gm)
+            Clarity
+          </label>
+          <select
+            value={stone.clarity || ""}
+            onChange={(e) => handleFieldChange("clarity", e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="">Select Clarity</option>
+            <option value="VS">VS</option>
+            <option value="VVS">VVS</option>
+            <option value="SI">SI</option>
+            <option value="I">I</option>
+          </select>
+        </div>
+
+        {/* Pieces */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Number of Pieces *
+          </label>
+          <input
+            type="number"
+            min="1"
+            value={stone.pieces || ""}
+            onChange={(e) => handleFieldChange("pieces", e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="0"
+            required
+          />
+        </div>
+
+        {/* Weight Per Stone */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Weight Per Stone (gm) *
           </label>
           <input
             type="number"
             step="0.001"
-            value={stone.weight}
-            onChange={(e) => handleFieldChange("weight", e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-            placeholder="0.000"
             min="0"
+            value={stone.weightPerStone || ""}
+            onChange={(e) => handleFieldChange("weightPerStone", e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="0.000"
+            required
           />
         </div>
 
@@ -926,9 +994,19 @@ const StoneConfigCard = memo(({ stone, index, onUpdate, onRemove }) => {
             readOnly
             className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
           />
-          <p className="text-xs text-gray-500 mt-1">
-            {stone.pieces || 0} pieces × {stone.weight || 0} gm
-          </p>
+        </div>
+
+        {/* Rate Per Gram (Read-only) */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Rate Per Gram (₹)
+          </label>
+          <input
+            type="text"
+            value={stone.rate || "0.00"}
+            readOnly
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
+          />
         </div>
 
         {/* Stone Value (Read-only) */}
@@ -942,12 +1020,12 @@ const StoneConfigCard = memo(({ stone, index, onUpdate, onRemove }) => {
             readOnly
             className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
           />
-          <p className="text-xs text-gray-500 mt-1">Based on rate chart</p>
         </div>
       </div>
     </div>
   );
 });
+
 
 const Dashboard = ({ user, onLogout }) => {
   const [logoUrl, setLogoUrl] = useState(
@@ -1137,6 +1215,10 @@ const Dashboard = ({ user, onLogout }) => {
   const [mmToCtConversions, setMmToCtConversions] = useState([]);
   const [diamondPricesForCalc, setDiamondPricesForCalc] = useState([]);
 
+  // FOR STONE PRICE CALCULATION //
+
+  const [stonePricesData, setStonePricesData] = useState([]);
+
   // *******************************INITIAL DATA LOADING******************************* //
   useEffect(() => {
     fetchMetalPrices();
@@ -1153,6 +1235,7 @@ const Dashboard = ({ user, onLogout }) => {
 
     fetchMmToCtConversions();
     fetchDiamondPricesForCalc();
+    fetchStonePricesForCalc();
   }, []);
 
   // ****************SAVE ACTIVE TABS TO LOCALSTORAGE**************** //
@@ -1964,6 +2047,21 @@ const Dashboard = ({ user, onLogout }) => {
       alert("Error deleting diamond price. Please try again.");
     } finally {
       setIsDiamondLoading(false);
+    }
+  };
+
+  // ********************FUNCTIONS FOR FETCHING THE PRICE PER CARAT BASED ON THE TOTAL WEIGHT OF THE STONE******************** //
+
+  const fetchStonePricesForCalc = async () => {
+    try {
+      const response = await axios.get(
+        "http://localhost:5000/api/stone-prices"
+      );
+      if (response.data.success) {
+        setStonePricesData(response.data.stonePrices);
+      }
+    } catch (error) {
+      console.error("Error fetching stone prices:", error);
     }
   };
 
@@ -2826,6 +2924,19 @@ const Dashboard = ({ user, onLogout }) => {
         urlHandle: value,
       },
     }));
+  };
+
+  /// ****************** ///////HELPER FUNCTIONS TO CALCULATE TOTAL PRICES/////// ****************** //
+
+  const calculateTotalDiamondPrice = () => {
+    return newProductForm.diamondConfig.reduce((total, diamond) => {
+      return total + (parseFloat(diamond.diamondValue) || 0);
+    }, 0);
+  };
+  const calculateTotalStonePrice = () => {
+    return newProductForm.stoneConfig.reduce((total, stone) => {
+      return total + (parseFloat(stone.stoneValue) || 0);
+    }, 0);
   };
 
   // ****************** ///////RENDER FUNCTIONS/////// ****************** //
@@ -4717,7 +4828,6 @@ const Dashboard = ({ user, onLogout }) => {
     </div>
   );
 
-
   const renderMakingChargesContent = () => (
     <div className="space-y-6">
       {/* Add New Making Charge Form */}
@@ -5908,6 +6018,19 @@ const Dashboard = ({ user, onLogout }) => {
                       ))
                     )}
                   </div>
+
+                  {newProductForm.diamondConfig.length > 1 && (
+                    <div className="bg-blue-50 rounded-lg border border-blue-200 p-4 mt-4">
+                      <div className="flex justify-between items-center">
+                        <h5 className="text-md font-medium text-blue-900">
+                          Total Diamond Price
+                        </h5>
+                        <span className="text-lg font-bold text-blue-900">
+                          ₹{calculateTotalDiamondPrice().toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Stone Configuration */}
@@ -5956,6 +6079,7 @@ const Dashboard = ({ user, onLogout }) => {
                           key={stone.id}
                           stone={stone}
                           index={index}
+                          stonePricesData={stonePricesData}
                           onUpdate={(updatedStone) => {
                             setNewProductForm((prev) => ({
                               ...prev,
@@ -5976,9 +6100,45 @@ const Dashboard = ({ user, onLogout }) => {
                       ))
                     )}
                   </div>
+                  {newProductForm.stoneConfig.length > 1 && (
+  <div className="bg-green-50 rounded-lg border border-green-200 p-4 mt-4">
+    <div className="flex justify-between items-center">
+      <h5 className="text-md font-medium text-green-900">Total Stone Price</h5>
+      <span className="text-lg font-bold text-green-900">
+        ₹{calculateTotalStonePrice().toFixed(2)}
+      </span>
+    </div>
+  </div>
+)}
                 </div>
               </div>
             </div>
+
+
+            {(newProductForm.diamondConfig.length > 0 || newProductForm.stoneConfig.length > 0) && (
+  <div className="bg-gray-100 rounded-lg border border-gray-300 p-6 mt-6">
+    <h4 className="text-lg font-semibold text-gray-800 mb-4">Price Summary</h4>
+    <div className="space-y-2">
+      {newProductForm.diamondConfig.length > 0 && (
+        <div className="flex justify-between">
+          <span className="text-gray-600">Total Diamond Price:</span>
+          <span className="font-medium">₹{calculateTotalDiamondPrice().toFixed(2)}</span>
+        </div>
+      )}
+      {newProductForm.stoneConfig.length > 0 && (
+        <div className="flex justify-between">
+          <span className="text-gray-600">Total Stone Price:</span>
+          <span className="font-medium">₹{calculateTotalStonePrice().toFixed(2)}</span>
+        </div>
+      )}
+      <hr className="my-2" />
+      <div className="flex justify-between text-lg font-bold">
+        <span>Grand Total:</span>
+        <span>₹{(calculateTotalDiamondPrice() + calculateTotalStonePrice()).toFixed(2)}</span>
+      </div>
+    </div>
+  </div>
+)}
 
             {/* Modal Footer */}
             <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex justify-end space-x-3">
