@@ -375,51 +375,189 @@ const ProductModal = ({
   );
 };
 
+const DiamondConfigCard = memo(
+  ({ diamond, index, onUpdate, onRemove, mmToCtData, diamondPricesData }) => {
+    const convertMmToCt = (mmValue, shape) => {
+      if (!mmValue || !mmToCtData.length) return "";
 
-const DiamondConfigCard = memo(({ diamond, index, onUpdate, onRemove }) => {
+      const numericMmValue = parseFloat(mmValue);
+      const shapeType = shape.toLowerCase();
 
-    // Function to convert MM value to CT value
-    const convertMmToCt = (mmValue) => {
+      // Filter conversions for the specific shape
+      const shapeConversions = mmToCtData.filter(
+        (item) => item.type.toLowerCase() === shapeType
+      );
 
+      if (shapeConversions.length === 0) {
+        throw new Error(`No conversion data found for ${shape} diamonds`);
+      }
 
-      /*  PLACEHOLDER FOR MM TO CT CONVERSION LOGIC */
+      // Try to find exact match first
+      const exactMatch = shapeConversions.find(
+        (item) => item.size === numericMmValue
+      );
 
+      if (exactMatch) {
+        return exactMatch.carat.toString();
+      }
 
-      const conversionRate = 0.005;
-      return (parseFloat(mmValue) * conversionRate).toFixed(3);
+      // If no exact match, try interpolation between closest values
+      const sortedConversions = shapeConversions.sort(
+        (a, b) => a.size - b.size
+      );
 
+      // Find the two closest values for interpolation
+      let lower = null;
+      let upper = null;
+
+      for (let i = 0; i < sortedConversions.length; i++) {
+        if (sortedConversions[i].size < numericMmValue) {
+          lower = sortedConversions[i];
+        } else if (sortedConversions[i].size > numericMmValue) {
+          upper = sortedConversions[i];
+          break;
+        }
+      }
+
+      // If we have both lower and upper bounds, interpolate
+      if (lower && upper) {
+        const ratio = (numericMmValue - lower.size) / (upper.size - lower.size);
+        const interpolatedCarat =
+          lower.carat + ratio * (upper.carat - lower.carat);
+        return interpolatedCarat.toFixed(3);
+      }
+
+      // If only lower bound exists (entered value is larger than all in DB)
+      if (lower && !upper) {
+        throw new Error(
+          `MM value ${mmValue} is larger than available data. Maximum available: ${lower.size}mm`
+        );
+      }
+
+      // If only upper bound exists (entered value is smaller than all in DB)
+      if (!lower && upper) {
+        throw new Error(
+          `MM value ${mmValue} is smaller than available data. Minimum available: ${upper.size}mm`
+        );
+      }
+
+      throw new Error(
+        `CT value not found for ${mmValue}mm ${shape} diamond in database`
+      );
+    };
+
+    const getPricePerCarat = (totalWeight, shape) => {
+      if (!totalWeight || !diamondPricesData.length) return 0;
+
+      const numericWeight = parseFloat(totalWeight);
+      const shapeType = shape.toLowerCase();
+
+      // Filter prices for the specific shape
+      const shapePrices = diamondPricesData.filter(
+        (item) => item.shape.toLowerCase() === shapeType
+      );
+
+      if (shapePrices.length === 0) {
+        throw new Error(`No price data found for ${shape} diamonds`);
+      }
+
+      // Find the weight range that contains our total weight
+      const priceEntry = shapePrices.find(
+        (item) =>
+          numericWeight >= item.weightFrom && numericWeight <= item.weightTo
+      );
+
+      if (!priceEntry) {
+        // Provide helpful error message with available ranges
+        const ranges = shapePrices
+          .map((p) => `${p.weightFrom}-${p.weightTo}ct`)
+          .join(", ");
+        throw new Error(
+          `Weight ${totalWeight}ct falls outside available price ranges for ${shape} diamonds. Available ranges: ${ranges}`
+        );
+      }
+
+      return priceEntry.pricePerCarat;
     };
 
     // Calculate total weight and diamond value
     const calculateValues = (updatedDiamond) => {
-      const pieces = parseInt(updatedDiamond.pieces) || 0;
-      const ctValue = parseFloat(updatedDiamond.ctValue) || 0;
-      const totalWeight = pieces * ctValue;
+      try {
+        const pieces = parseInt(updatedDiamond.pieces) || 0;
+        const ctValue = parseFloat(updatedDiamond.ctValue) || 0;
+        const totalWeight = pieces * ctValue;
 
+        if (totalWeight === 0 || !updatedDiamond.shape) {
+          return {
+            ...updatedDiamond,
+            totalWeight: "0.000",
+            diamondValue: "0.00",
+            calculationError: null,
+          };
+        }
 
-      /*  PLACEHOLDER FOR DIAMOND VALUE BASED ON YOUR DIAMOND RATE CHART LOGIC */
+        // Get price per carat from database based on weight range
+        const pricePerCarat = getPricePerCarat(
+          totalWeight,
+          updatedDiamond.shape
+        );
+        const diamondValue = totalWeight * pricePerCarat;
 
-      const pricePerCarat = 1000; // Get from your diamond rate chart
-      const diamondValue = totalWeight * pricePerCarat;
-
-      return {
-        ...updatedDiamond,
-        totalWeight: totalWeight.toFixed(3),
-        diamondValue: diamondValue.toFixed(2),
-      };
+        return {
+          ...updatedDiamond,
+          totalWeight: totalWeight.toFixed(3),
+          diamondValue: diamondValue.toFixed(2),
+          calculationError: null,
+          pricePerCarat: pricePerCarat.toFixed(2), // Optional: show the rate used
+        };
+      } catch (error) {
+        return {
+          ...updatedDiamond,
+          totalWeight: updatedDiamond.totalWeight || "0.000",
+          diamondValue: updatedDiamond.diamondValue || "0.00",
+          calculationError: error.message,
+        };
+      }
     };
 
     const handleFieldChange = (field, value) => {
       let updatedDiamond = { ...diamond, [field]: value };
 
-      // Handle MM to CT conversion
-      if (field === "mmValue" && diamond.weightType === "mm") {
-        updatedDiamond.ctValue = convertMmToCt(value);
-      }
+      try {
+        // Handle MM to CT conversion
+        if (field === "mmValue" && diamond.weightType === "mm") {
+          if (value && diamond.shape) {
+            const ctValue = convertMmToCt(value, diamond.shape);
+            updatedDiamond.ctValue = ctValue;
+            updatedDiamond.calculationError = null;
+          } else {
+            updatedDiamond.ctValue = "";
+            updatedDiamond.calculationError = null;
+          }
+        }
 
-      // Recalculate values when pieces or ctValue changes
-      if (field === "pieces" || field === "ctValue" || field === "mmValue") {
-        updatedDiamond = calculateValues(updatedDiamond);
+        // Clear CT value if shape changes and we're in MM mode
+        if (
+          field === "shape" &&
+          diamond.weightType === "mm" &&
+          diamond.mmValue
+        ) {
+          try {
+            const ctValue = convertMmToCt(diamond.mmValue, value);
+            updatedDiamond.ctValue = ctValue;
+            updatedDiamond.calculationError = null;
+          } catch (error) {
+            updatedDiamond.ctValue = "";
+            updatedDiamond.calculationError = error.message;
+          }
+        }
+
+        // Recalculate values when pieces, ctValue, mmValue, or shape changes
+        if (["pieces", "ctValue", "mmValue", "shape"].includes(field)) {
+          updatedDiamond = calculateValues(updatedDiamond);
+        }
+      } catch (error) {
+        updatedDiamond.calculationError = error.message;
       }
 
       onUpdate(updatedDiamond);
@@ -438,6 +576,13 @@ const DiamondConfigCard = memo(({ diamond, index, onUpdate, onRemove }) => {
             Remove
           </button>
         </div>
+
+        {/* Show calculation error if any */}
+        {diamond.calculationError && (
+          <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+            {diamond.calculationError}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {/* Diamond Shape */}
@@ -611,203 +756,198 @@ const DiamondConfigCard = memo(({ diamond, index, onUpdate, onRemove }) => {
         </div>
       </div>
     );
-  });
+  }
+);
 
+const StoneConfigCard = memo(({ stone, index, onUpdate, onRemove }) => {
+  const calculateStoneValues = (updatedStone) => {
+    const pieces = parseInt(updatedStone.pieces) || 0;
+    const weight = parseFloat(updatedStone.weight) || 0;
+    const totalWeight = pieces * weight;
 
-  const StoneConfigCard = memo(({ stone, index, onUpdate, onRemove }) => {
-    
+    // PLACEHOLDER LOGIC FOR CALCULATING STONE VALUE BASED ON STONE RATE CHART
 
-    const calculateStoneValues = (updatedStone) => {
-      const pieces = parseInt(updatedStone.pieces) || 0;
-      const weight = parseFloat(updatedStone.weight) || 0;
-      const totalWeight = pieces * weight;
-
-
-      // PLACEHOLDER LOGIC FOR CALCULATING STONE VALUE BASED ON STONE RATE CHART
-
-
-      const getStoneRate = (stoneType, totalWeight) => {
-
-        // PLACEHOLDER RATES, SHOULD MATCH EXACT STONE RATE BASED ON WEIGHT RANGE
-        const rates = {
-          Gemstone: 100, // ₹ per gram
-          Moissanite: 150, // ₹ per gram
-        };
-        return rates[stoneType] || 0;
+    const getStoneRate = (stoneType, totalWeight) => {
+      // PLACEHOLDER RATES, SHOULD MATCH EXACT STONE RATE BASED ON WEIGHT RANGE
+      const rates = {
+        Gemstone: 100, // ₹ per gram
+        Moissanite: 150, // ₹ per gram
       };
-
-      const ratePerGram = getStoneRate(updatedStone.stoneType, totalWeight);
-      const stoneValue = totalWeight * ratePerGram;
-
-      return {
-        ...updatedStone,
-        totalWeight: totalWeight.toFixed(3),
-        stoneValue: stoneValue.toFixed(2),
-      };
+      return rates[stoneType] || 0;
     };
 
-    const handleFieldChange = (field, value) => {
-      let updatedStone = { ...stone, [field]: value };
+    const ratePerGram = getStoneRate(updatedStone.stoneType, totalWeight);
+    const stoneValue = totalWeight * ratePerGram;
 
-      // RECALCULATE VALUES WHEN PIECES, WEIGHT, OR STONE TYPE CHANGES
-      if (field === "pieces" || field === "weight" || field === "stoneType") {
-        updatedStone = calculateStoneValues(updatedStone);
-      }
-
-      onUpdate(updatedStone);
+    return {
+      ...updatedStone,
+      totalWeight: totalWeight.toFixed(3),
+      stoneValue: stoneValue.toFixed(2),
     };
+  };
 
-    // Stone color options based on type
-    const getColorOptions = (stoneType) => {
-      const colorOptions = {
-        Gemstone: [
-          "Red",
-          "Blue",
-          "Green",
-          "Yellow",
-          "Purple",
-          "Pink",
-          "Orange",
-          "White",
-          "Black",
-          "Clear",
-          "Multi-Color",
-        ],
-        Moissanite: [
-          "Colorless",
-          "Near Colorless",
-          "Faint Yellow",
-          "Light Yellow",
-          "Yellow",
-          "Blue",
-          "Green",
-          "Gray",
-          "Black",
-        ],
-      };
-      return colorOptions[stoneType] || [];
+  const handleFieldChange = (field, value) => {
+    let updatedStone = { ...stone, [field]: value };
+
+    // RECALCULATE VALUES WHEN PIECES, WEIGHT, OR STONE TYPE CHANGES
+    if (field === "pieces" || field === "weight" || field === "stoneType") {
+      updatedStone = calculateStoneValues(updatedStone);
+    }
+
+    onUpdate(updatedStone);
+  };
+
+  // Stone color options based on type
+  const getColorOptions = (stoneType) => {
+    const colorOptions = {
+      Gemstone: [
+        "Red",
+        "Blue",
+        "Green",
+        "Yellow",
+        "Purple",
+        "Pink",
+        "Orange",
+        "White",
+        "Black",
+        "Clear",
+        "Multi-Color",
+      ],
+      Moissanite: [
+        "Colorless",
+        "Near Colorless",
+        "Faint Yellow",
+        "Light Yellow",
+        "Yellow",
+        "Blue",
+        "Green",
+        "Gray",
+        "Black",
+      ],
     };
+    return colorOptions[stoneType] || [];
+  };
 
-    return (
-      <div className="bg-white rounded-lg border border-gray-200 p-4">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-sm font-medium text-gray-700">
-            Stone {index + 1}
-          </span>
-          <button
-            onClick={onRemove}
-            className="text-red-600 hover:text-red-800 text-sm"
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-4">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-medium text-gray-700">
+          Stone {index + 1}
+        </span>
+        <button
+          onClick={onRemove}
+          className="text-red-600 hover:text-red-800 text-sm"
+        >
+          Remove
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Stone Type */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Stone Type
+          </label>
+          <select
+            value={stone.stoneType}
+            onChange={(e) => handleFieldChange("stoneType", e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
           >
-            Remove
-          </button>
+            <option value="">Select Stone Type</option>
+            <option value="Gemstone">Gemstone</option>
+            <option value="Moissanite">Moissanite</option>
+          </select>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* Stone Type */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Stone Type
-            </label>
-            <select
-              value={stone.stoneType}
-              onChange={(e) => handleFieldChange("stoneType", e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-            >
-              <option value="">Select Stone Type</option>
-              <option value="Gemstone">Gemstone</option>
-              <option value="Moissanite">Moissanite</option>
-            </select>
-          </div>
-
-          {/* Stone Color */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Stone Color
-            </label>
-            <select
-              value={stone.stoneColor}
-              onChange={(e) => handleFieldChange("stoneColor", e.target.value)}
-              disabled={!stone.stoneType}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 disabled:bg-gray-100"
-            >
-              <option value="">Select Color</option>
-              {getColorOptions(stone.stoneType).map((color) => (
-                <option key={color} value={color}>
-                  {color}
-                </option>
-              ))}
-            </select>
-            {!stone.stoneType && (
-              <p className="text-xs text-gray-500 mt-1">
-                Select stone type first
-              </p>
-            )}
-          </div>
-
-          {/* Number of Pieces */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              No. of Pieces
-            </label>
-            <input
-              type="number"
-              value={stone.pieces}
-              onChange={(e) => handleFieldChange("pieces", e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-              placeholder="0"
-              min="1"
-            />
-          </div>
-
-          {/* Weight per Stone */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Weight per Stone (gm)
-            </label>
-            <input
-              type="number"
-              step="0.001"
-              value={stone.weight}
-              onChange={(e) => handleFieldChange("weight", e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-              placeholder="0.000"
-              min="0"
-            />
-          </div>
-
-          {/* Total Weight (Read-only) */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Total Weight (gm)
-            </label>
-            <input
-              type="text"
-              value={stone.totalWeight || "0.000"}
-              readOnly
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
-            />
+        {/* Stone Color */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Stone Color
+          </label>
+          <select
+            value={stone.stoneColor}
+            onChange={(e) => handleFieldChange("stoneColor", e.target.value)}
+            disabled={!stone.stoneType}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 disabled:bg-gray-100"
+          >
+            <option value="">Select Color</option>
+            {getColorOptions(stone.stoneType).map((color) => (
+              <option key={color} value={color}>
+                {color}
+              </option>
+            ))}
+          </select>
+          {!stone.stoneType && (
             <p className="text-xs text-gray-500 mt-1">
-              {stone.pieces || 0} pieces × {stone.weight || 0} gm
+              Select stone type first
             </p>
-          </div>
+          )}
+        </div>
 
-          {/* Stone Value (Read-only) */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Stone Value (₹)
-            </label>
-            <input
-              type="text"
-              value={stone.stoneValue || "0.00"}
-              readOnly
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
-            />
-            <p className="text-xs text-gray-500 mt-1">Based on rate chart</p>
-          </div>
+        {/* Number of Pieces */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            No. of Pieces
+          </label>
+          <input
+            type="number"
+            value={stone.pieces}
+            onChange={(e) => handleFieldChange("pieces", e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+            placeholder="0"
+            min="1"
+          />
+        </div>
+
+        {/* Weight per Stone */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Weight per Stone (gm)
+          </label>
+          <input
+            type="number"
+            step="0.001"
+            value={stone.weight}
+            onChange={(e) => handleFieldChange("weight", e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+            placeholder="0.000"
+            min="0"
+          />
+        </div>
+
+        {/* Total Weight (Read-only) */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Total Weight (gm)
+          </label>
+          <input
+            type="text"
+            value={stone.totalWeight || "0.000"}
+            readOnly
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            {stone.pieces || 0} pieces × {stone.weight || 0} gm
+          </p>
+        </div>
+
+        {/* Stone Value (Read-only) */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Stone Value (₹)
+          </label>
+          <input
+            type="text"
+            value={stone.stoneValue || "0.00"}
+            readOnly
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
+          />
+          <p className="text-xs text-gray-500 mt-1">Based on rate chart</p>
         </div>
       </div>
-    );
-  });
+    </div>
+  );
+});
 
 const Dashboard = ({ user, onLogout }) => {
   const [logoUrl, setLogoUrl] = useState(
@@ -958,9 +1098,6 @@ const Dashboard = ({ user, onLogout }) => {
   const [selectedMakingChargeIds, setSelectedMakingChargeIds] = useState([]);
   const [selectAllMakingCharges, setSelectAllMakingCharges] = useState(false);
 
-
-
-
   //********  ********** ADD PRODUCT MODAL STATES ********** ********//
 
   const [showAddProductModal, setShowAddProductModal] = useState(false);
@@ -995,9 +1132,13 @@ const Dashboard = ({ user, onLogout }) => {
 
   const [isUrlManuallyEdited, setIsUrlManuallyEdited] = useState(false);
 
+  // FOR DIAMOND PRICE CALCULATION //
+
+  const [mmToCtConversions, setMmToCtConversions] = useState([]);
+  const [diamondPricesForCalc, setDiamondPricesForCalc] = useState([]);
+
   // *******************************INITIAL DATA LOADING******************************* //
   useEffect(() => {
-
     fetchMetalPrices();
     fetchMmToCtData();
     fetchCurrentLogo();
@@ -1010,6 +1151,8 @@ const Dashboard = ({ user, onLogout }) => {
     fetchShopifyConfig();
     fetchSyncStatus();
 
+    fetchMmToCtConversions();
+    fetchDiamondPricesForCalc();
   }, []);
 
   // ****************SAVE ACTIVE TABS TO LOCALSTORAGE**************** //
@@ -1022,37 +1165,34 @@ const Dashboard = ({ user, onLogout }) => {
     localStorage.setItem("activeConfigTab", activeConfigTab);
   }, [activeConfigTab]);
 
-
-
   // *************LOAD PRODUCTS WHEN MAIN TAB CHANGES TO PRODUCTS************* //
 
   useEffect(() => {
-  if (activeMainTab === "products") {
-    if (isShopifyConfigured) {
-      fetchShopifyProducts();
-      fetchProductAnalytics();
-    } else {
-      setProductAnalytics({
-        totalProducts: 0,
-        activeProducts: 0,
-        draftProducts: 0,
-        archivedProducts: 0,
-        topVendors: [],
-        lastSync: null,
-        isConfigured: false,
-      });
+    if (activeMainTab === "products") {
+      if (isShopifyConfigured) {
+        fetchShopifyProducts();
+        fetchProductAnalytics();
+      } else {
+        setProductAnalytics({
+          totalProducts: 0,
+          activeProducts: 0,
+          draftProducts: 0,
+          archivedProducts: 0,
+          topVendors: [],
+          lastSync: null,
+          isConfigured: false,
+        });
+      }
     }
-  }
-}, [
-  activeMainTab,
-  isShopifyConfigured,
-  searchTerm,
-  selectedStatus,
-  selectedVendor,
-  selectedProductType,
-  pagination.current,
-]);
-
+  }, [
+    activeMainTab,
+    isShopifyConfigured,
+    searchTerm,
+    selectedStatus,
+    selectedVendor,
+    selectedProductType,
+    pagination.current,
+  ]);
 
   // *************ALSO FETCH ANALYTICS AFTER SUCCESSFUL SYNC************* //
   const syncShopifyProducts = async (fullSync = false) => {
@@ -1087,8 +1227,6 @@ const Dashboard = ({ user, onLogout }) => {
   };
 
   // *********************SHOPIFY API FUNCTIONS********************* //
-
-
 
   // **************FETCH SHOPIFY CONFIGURATION************** //
 
@@ -1183,7 +1321,7 @@ const Dashboard = ({ user, onLogout }) => {
   };
 
   // **************FETCH SHOPIFY PRODUCTS WITH FILTERS AND PAGINATION************** //
-  
+
   const fetchShopifyProducts = async (page = 1) => {
     try {
       setIsLoading(true);
@@ -1232,7 +1370,6 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
-
   // **************FETCH SHOPIFY PRODUCTS ANALYTICS************** //
 
   const fetchProductAnalytics = async () => {
@@ -1262,7 +1399,6 @@ const Dashboard = ({ user, onLogout }) => {
       });
     }
   };
-
 
   // **************PRODUCT HANDLERS************** //
 
@@ -1317,7 +1453,6 @@ const Dashboard = ({ user, onLogout }) => {
     }
     setSelectAll(!selectAll);
   };
-  
 
   // **************SEARCH FUNCTIONALITY************** //
 
@@ -1333,7 +1468,6 @@ const Dashboard = ({ user, onLogout }) => {
       timeout = setTimeout(later, wait);
     };
   }
-
 
   // Search debounce
   const debouncedSearch = useCallback(
@@ -1534,7 +1668,6 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
-
   // ********************FUNCTION FOR LOGO MANAGEMENT******************** //
 
   // Fetch current logo from the server
@@ -1549,13 +1682,10 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
-
   // Handle logo edit button click
   const handleLogoEdit = () => {
     setShowLogoModal(true);
   };
-
-
 
   // Handle file selection for logo upload
   const handleFileSelect = (e) => {
@@ -1577,7 +1707,6 @@ const Dashboard = ({ user, onLogout }) => {
       }
     }
   };
-
 
   // Handle logo upload
   const handleLogoUpload = async () => {
@@ -1616,7 +1745,7 @@ const Dashboard = ({ user, onLogout }) => {
   const triggerFileInput = () => {
     fileInputRef.current?.click();
   };
-   
+
   // Handle modal close
   const handleModalClose = () => {
     setShowLogoModal(false);
@@ -1626,27 +1755,49 @@ const Dashboard = ({ user, onLogout }) => {
       fileInputRef.current.value = "";
     }
   };
-  
-
 
   // ***************HANDLE LOGOUT CONFIRMATION*************** //
-
 
   const handleLogout = () => {
     if (window.confirm("Are you sure you want to logout?")) {
       onLogout();
     }
-  }; 
-
+  };
 
   // FUNCTION TO TOGGLE ACCORDION SECTIONS
   // THIS FUNCTION WILL SET THE ACTIVE ACCORDION SECTION OR CLOSE IT IF IT'S ALREADY ACTIVE
-
 
   const toggleAccordion = (section) => {
     setActiveAccordion(activeAccordion === section ? null : section);
   };
 
+  // ********************FUNCTIONS FOR FETCHING THE MM TO CT CONVERSIONS******************** //
+
+  const fetchMmToCtConversions = async () => {
+    try {
+      const response = await axios.get("http://localhost:5000/api/mm-to-ct");
+      if (response.data.success) {
+        setMmToCtConversions(response.data.conversions);
+      }
+    } catch (error) {
+      console.error("Error fetching MM to CT conversions:", error);
+    }
+  };
+
+  // ********************FUNCTIONS FOR FETCHING THE PRICE PER CARAT BASED ON THE TOTAL WEIGHT OF THE DIAMOND******************** //
+
+  const fetchDiamondPricesForCalc = async () => {
+    try {
+      const response = await axios.get(
+        "http://localhost:5000/api/diamond-prices"
+      );
+      if (response.data.success) {
+        setDiamondPricesForCalc(response.data.diamondPrices);
+      }
+    } catch (error) {
+      console.error("Error fetching diamond prices:", error);
+    }
+  };
 
   // ********************FUNCTIONS FOR DIAMOND PRICE MANAGEMENT******************** //
 
@@ -1816,9 +1967,7 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
-
   // ********************FUNCTIONS FOR STONE PRICE MANAGEMENT******************** //
-
 
   const fetchStonePrices = async () => {
     try {
@@ -1980,8 +2129,6 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
-
-
   // ***********************FORMAT CURRENCY FOR DISPLAY*********************** //
 
   const formatCurrency = (amount) => {
@@ -2026,7 +2173,6 @@ const Dashboard = ({ user, onLogout }) => {
       return "Date Error";
     }
   };
-
 
   // ***********************CALCULATE PRICE CHANGE*********************** //
 
@@ -2200,8 +2346,6 @@ const Dashboard = ({ user, onLogout }) => {
     }
     setSelectAllMmToCt(!selectAllMmToCt);
   };
-
-
 
   // ********************FUNCTIONS FOR MAKING CHARGES MANAGEMENT******************** //
 
@@ -2396,7 +2540,6 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
-
   // Function to handle making charge selection
   const handleMakingChargeSelection = (id) => {
     setSelectedMakingChargeIds((prev) => {
@@ -2551,11 +2694,8 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
-
-
   // HELPER FUNCTION TO DETECT MEDIA TYPE FROM URL //
   // This function checks the URL for common image and video file extensions
-
 
   const detectMediaTypeFromUrl = (url) => {
     const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
@@ -2579,7 +2719,6 @@ const Dashboard = ({ user, onLogout }) => {
       .replace(/-+/g, "-")
       .trim();
   };
-
 
   // ******************FUNCTION TO HANDLE ADDING A NEW PRODUCT****************** //
   const handleAddProduct = async () => {
@@ -2663,38 +2802,33 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
-
   const handleTitleChange = (e) => {
-  const newTitle = e.target.value;
-  setNewProductForm((prev) => ({
-    ...prev,
-    title: newTitle,
-    seo: {
-      ...prev.seo,
-      urlHandle: isUrlManuallyEdited
-        ? prev.seo.urlHandle
-        : newTitle.trim().toLowerCase().replace(/\s+/g, "-"),
-    },
-  }));
-};
+    const newTitle = e.target.value;
+    setNewProductForm((prev) => ({
+      ...prev,
+      title: newTitle,
+      seo: {
+        ...prev.seo,
+        urlHandle: isUrlManuallyEdited
+          ? prev.seo.urlHandle
+          : newTitle.trim().toLowerCase().replace(/\s+/g, "-"),
+      },
+    }));
+  };
 
-
-const handleUrlChange = (e) => {
-  setIsUrlManuallyEdited(true); // stop auto sync
-  const value = e.target.value;
-  setNewProductForm((prev) => ({
-    ...prev,
-    seo: {
-      ...prev.seo,
-      urlHandle: value,
-    },
-  }));
-};
-
+  const handleUrlChange = (e) => {
+    setIsUrlManuallyEdited(true); // stop auto sync
+    const value = e.target.value;
+    setNewProductForm((prev) => ({
+      ...prev,
+      seo: {
+        ...prev.seo,
+        urlHandle: value,
+      },
+    }));
+  };
 
   // ****************** ///////RENDER FUNCTIONS/////// ****************** //
-
-
 
   const renderProductsContent = () => (
     <div className="space-y-6">
@@ -3331,8 +3465,7 @@ const handleUrlChange = (e) => {
           Shopify Store Configuration
         </h3>
 
-        
-          {/* Current Configuration Status */}
+        {/* Current Configuration Status */}
         {isShopifyConfigured && shopifyConfig && (
           <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
             <h4 className="font-medium text-green-900 mb-2">
@@ -3379,9 +3512,6 @@ const handleUrlChange = (e) => {
             </p>
           </div>
         </div> */}
-          
-
-        
 
         {/* Configuration Form */}
         <div className="space-y-4">
@@ -3515,8 +3645,6 @@ const handleUrlChange = (e) => {
             </p>
           </div>
         </div> */}
-
-        
       </div>
     </div>
   );
@@ -4588,6 +4716,7 @@ const handleUrlChange = (e) => {
       </div>
     </div>
   );
+
 
   const renderMakingChargesContent = () => (
     <div className="space-y-6">
@@ -5757,6 +5886,8 @@ const handleUrlChange = (e) => {
                           key={diamond.id}
                           diamond={diamond}
                           index={index}
+                          mmToCtData={mmToCtConversions}
+                          diamondPricesData={diamondPricesForCalc}
                           onUpdate={(updatedDiamond) => {
                             setNewProductForm((prev) => ({
                               ...prev,
