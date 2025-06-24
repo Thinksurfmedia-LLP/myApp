@@ -2419,6 +2419,46 @@ app.post(
 
       // Calculate price based on configurations
       let calculatedPrice = 0;
+
+      if (metalConfigData && metalConfigData.type && metalConfigData.netWeight) {
+  const netWeight = parseFloat(metalConfigData.netWeight) || 0;
+  if (netWeight > 0) {
+    // Fetch current metal prices from database
+    try {
+      const metalPricesDoc = await MetalPrices.findOne().sort({ createdAt: -1 });
+      if (metalPricesDoc) {
+        let pricePerGram = 0;
+        
+        if (metalConfigData.type === 'Gold' && metalConfigData.purity) {
+          switch (metalConfigData.purity) {
+            case '24k':
+              pricePerGram = metalPricesDoc.gold24K;
+              break;
+            case '22k':
+              pricePerGram = metalPricesDoc.gold22K;
+              break;
+            case '18k':
+              pricePerGram = metalPricesDoc.gold18K;
+              break;
+            case '14k':
+              pricePerGram = metalPricesDoc.gold14K;
+              break;
+            default:
+              pricePerGram = 0;
+          }
+        } else if (metalConfigData.type === 'Silver') {
+          pricePerGram = metalPricesDoc.silver;
+        }
+        
+        const metalPrice = pricePerGram * netWeight;
+        calculatedPrice += metalPrice;
+        console.log(`Metal price calculation: ${pricePerGram} × ${netWeight} = ${metalPrice}`);
+      }
+    } catch (metalPriceError) {
+      console.error('Error fetching metal prices for calculation:', metalPriceError);
+    }
+  }
+}
       
       if (diamondConfigData && diamondConfigData.length > 0) {
   diamondConfigData.forEach(diamond => {

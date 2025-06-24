@@ -1313,6 +1313,57 @@ const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   // *********************SHOPIFY API FUNCTIONS********************* //
 
+  // Add this function to calculate making charges
+const calculateMakingCharges = () => {
+  const { metalConfig } = newProductForm;
+  
+  // Return 0 if no metal configuration
+  if (!metalConfig.type) {
+    return 0;
+  }
+  
+  // Return minimum making charge if it's Silver
+  if (metalConfig.type === 'Silver') {
+    return parseFloat(minimumMakingCharge);
+  }
+  
+  // Return 0 if no net weight or invalid weight
+  const netWeight = parseFloat(metalConfig.netWeight);
+  if (!netWeight || netWeight <= 0) {
+    return 0;
+  }
+  
+  // Get the purity in the format stored in database (uppercase with 'K')
+  const purity = metalConfig.purity ? metalConfig.purity.toUpperCase() : '';
+  
+  // Return minimum making charge if no purity is selected
+  if (!purity) {
+    return parseFloat(minimumMakingCharge);
+  }
+  
+  // Find matching making charge based on purity and weight range
+  const matchingCharge = makingCharges.find(charge => {
+    return (
+      charge.purity === purity &&
+      netWeight >= charge.weightFrom &&
+      netWeight <= charge.weightTo
+    );
+  });
+  
+  // If matching charge found, calculate the making charge
+  if (matchingCharge) {
+    const calculatedCharge = netWeight * matchingCharge.rate;
+    const minCharge = parseFloat(minimumMakingCharge);
+    
+    // Return the higher value between calculated charge and minimum charge
+    return Math.max(calculatedCharge, minCharge);
+  }
+  
+  // If no matching charge found, return minimum making charge
+  return parseFloat(minimumMakingCharge);
+};
+
+
   // **************FETCH SHOPIFY CONFIGURATION************** //
 
   const fetchShopifyConfig = async () => {
@@ -1678,6 +1729,44 @@ const handleBulkDelete = async () => {
       setIsLoading(false);
     }
   };
+
+  // Function to calculate metal price
+  const calculateMetalPrice = () => {
+  const { type, purity, netWeight } = newProductForm.metalConfig;
+  
+  if (!type || !netWeight || parseFloat(netWeight) <= 0) {
+    return 0;
+  }
+
+  let pricePerGram = 0;
+  
+  if (type === 'Gold') {
+    if (!purity) return 0;
+    
+    switch (purity) {
+      case '24k':
+        pricePerGram = metalPrices.gold24K || 0;
+        break;
+      case '22k':
+        pricePerGram = metalPrices.gold22K || 0;
+        break;
+      case '18k':
+        pricePerGram = metalPrices.gold18K || 0;
+        break;
+      case '14k':
+        pricePerGram = metalPrices.gold14K || 0;
+        break;
+      default:
+        pricePerGram = 0;
+    }
+  } else if (type === 'Silver') {
+    pricePerGram = metalPrices.silver || 0;
+  }
+
+  const totalMetalPrice = pricePerGram * parseFloat(netWeight);
+  return isNaN(totalMetalPrice) ? 0 : totalMetalPrice;
+};
+
 
   const handlePriceChange = useCallback((metal, value) => {
     setMetalPrices((prev) => ({
@@ -2792,7 +2881,15 @@ const handleBulkDelete = async () => {
       },
       metalConfig: {},
       diamondConfig: [],
-      stoneConfig: [], // Changed from {} to []
+      stoneConfig: [],
+      pricingConfig: {
+      wastagePercentage: "",
+      miscCharges: "",
+      shippingChargesPercentage: "",
+      taxPercentage: "",
+      markupPercentage: "",
+      compareAtMarginPercentage: "",
+    }, // Changed from {} to []
     });
   };
 
@@ -5658,7 +5755,7 @@ const handleBulkDelete = async () => {
                         )}
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/*<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
                             Upload Method
@@ -5726,7 +5823,34 @@ const handleBulkDelete = async () => {
                             </div>
                           )}
                         </div>
-                      </div>
+                      </div>*/}
+
+                      
+<div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">
+    Media URL
+  </label>
+  <input
+    type="url"
+    value={media.url}
+    onChange={(e) => {
+      const url = e.target.value;
+      handleMediaChange(index, "url", url);
+      if (url) {
+        handleMediaChange(
+          index,
+          "mediaType",
+          detectMediaTypeFromUrl(url)
+        );
+      }
+    }}
+    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+    placeholder="https://example.com/media.jpg or .mp4"
+  />
+  <p className="text-xs text-gray-500 mt-1">
+    Paste a direct link to an image or video file
+  </p>
+</div>
 
                       {/* Media Type Indicator */}
                       {(media.file || media.url) && (
@@ -6070,6 +6194,88 @@ const handleBulkDelete = async () => {
                   </div>
                 </div>
 
+                {newProductForm.metalConfig.type && newProductForm.metalConfig.netWeight && parseFloat(newProductForm.metalConfig.netWeight) > 0 && (
+  <div className="bg-amber-50 rounded-lg border border-amber-200 p-4 mt-4">
+    <h4 className="text-md font-medium text-amber-900 mb-3">
+      Metal Price Calculation
+    </h4>
+    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div>
+        <label className="block text-sm font-medium text-amber-800 mb-1">
+          Metal Type
+        </label>
+        <div className="text-sm text-amber-900 font-medium">
+          {newProductForm.metalConfig.type}
+          {newProductForm.metalConfig.type === 'Gold' && newProductForm.metalConfig.purity && (
+            <span className="ml-1">({newProductForm.metalConfig.purity.toUpperCase()})</span>
+          )}
+        </div>
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium text-amber-800 mb-1">
+          Price per Gram
+        </label>
+        <div className="text-sm text-amber-900 font-medium">
+          ₹{(() => {
+            const { type, purity } = newProductForm.metalConfig;
+            if (type === 'Gold' && purity) {
+              switch (purity) {
+                case '24k': return (metalPrices.gold24K || 0).toFixed(2);
+                case '22k': return (metalPrices.gold22K || 0).toFixed(2);
+                case '18k': return (metalPrices.gold18K || 0).toFixed(2);
+                case '14k': return (metalPrices.gold14K || 0).toFixed(2);
+                default: return '0.00';
+              }
+            } else if (type === 'Silver') {
+              return (metalPrices.silver || 0).toFixed(2);
+            }
+            return '0.00';
+          })()}
+        </div>
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium text-amber-800 mb-1">
+          Net Weight
+        </label>
+        <div className="text-sm text-amber-900 font-medium">
+          {parseFloat(newProductForm.metalConfig.netWeight).toFixed(2)}g
+        </div>
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium text-amber-800 mb-1">
+          Total Metal Price
+        </label>
+        <div className="text-lg text-amber-900 font-bold">
+          ₹{calculateMetalPrice().toFixed(2)}
+        </div>
+      </div>
+    </div>
+    
+    <div className="mt-3 p-3 bg-amber-100 rounded-lg">
+      <div className="text-sm text-amber-800">
+        <strong>Calculation:</strong> ₹{(() => {
+          const { type, purity } = newProductForm.metalConfig;
+          if (type === 'Gold' && purity) {
+            switch (purity) {
+              case '24k': return (metalPrices.gold24K || 0).toFixed(2);
+              case '22k': return (metalPrices.gold22K || 0).toFixed(2);
+              case '18k': return (metalPrices.gold18K || 0).toFixed(2);
+              case '14k': return (metalPrices.gold14K || 0).toFixed(2);
+              default: return '0.00';
+            }
+          } else if (type === 'Silver') {
+            return (metalPrices.silver || 0).toFixed(2);
+          }
+          return '0.00';
+        })()} (per gram) × {parseFloat(newProductForm.metalConfig.netWeight).toFixed(2)}g = ₹{calculateMetalPrice().toFixed(2)}
+      </div>
+    </div>
+  </div>
+)}
+
                 {/* Diamond Configuration */}
                 {/* Diamond Configuration */}
                 <div className="mb-6">
@@ -6236,14 +6442,193 @@ const handleBulkDelete = async () => {
   </div>
 )}
                 </div>
+
+               
+
+{/* Additional Pricing Configuration */}
+<div className="bg-gray-50 rounded-lg p-4">
+  <h3 className="text-lg font-medium text-gray-900 mb-4">
+    Additional Pricing Configuration
+  </h3>
+  
+  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    {/* Wastage % */}
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">
+        Wastage (%)
+      </label>
+      <input
+        type="number"
+        step="0.01"
+        value={newProductForm.pricingConfig?.wastagePercentage || ""}
+        onChange={(e) =>
+          setNewProductForm((prev) => ({
+            ...prev,
+            pricingConfig: {
+              ...prev.pricingConfig,
+              wastagePercentage: e.target.value,
+            },
+          }))
+        }
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        placeholder="0.00"
+      />
+    </div>
+
+    {/* Misc. Charges */}
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">
+        Misc. Charges (₹)
+      </label>
+      <input
+        type="number"
+        step="0.01"
+        value={newProductForm.pricingConfig?.miscCharges || ""}
+        onChange={(e) =>
+          setNewProductForm((prev) => ({
+            ...prev,
+            pricingConfig: {
+              ...prev.pricingConfig,
+              miscCharges: e.target.value,
+            },
+          }))
+        }
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        placeholder="0.00"
+      />
+    </div>
+
+    {/* Shipping Charges % */}
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">
+        Shipping Charges (%)
+      </label>
+      <input
+        type="number"
+        step="0.01"
+        value={newProductForm.pricingConfig?.shippingChargesPercentage || ""}
+        onChange={(e) =>
+          setNewProductForm((prev) => ({
+            ...prev,
+            pricingConfig: {
+              ...prev.pricingConfig,
+              shippingChargesPercentage: e.target.value,
+            },
+          }))
+        }
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        placeholder="0.00"
+      />
+    </div>
+
+    {/* Tax % */}
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">
+        Tax (%)
+      </label>
+      <input
+        type="number"
+        step="0.01"
+        value={newProductForm.pricingConfig?.taxPercentage || ""}
+        onChange={(e) =>
+          setNewProductForm((prev) => ({
+            ...prev,
+            pricingConfig: {
+              ...prev.pricingConfig,
+              taxPercentage: e.target.value,
+            },
+          }))
+        }
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        placeholder="0.00"
+      />
+    </div>
+
+    {/* Markup % */}
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">
+        Markup (%)
+      </label>
+      <input
+        type="number"
+        step="0.01"
+        value={newProductForm.pricingConfig?.markupPercentage || ""}
+        onChange={(e) =>
+          setNewProductForm((prev) => ({
+            ...prev,
+            pricingConfig: {
+              ...prev.pricingConfig,
+              markupPercentage: e.target.value,
+            },
+          }))
+        }
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        placeholder="0.00"
+      />
+    </div>
+
+    {/* Compare At Price Margin % */}
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">
+        Compare At Price Margin (%)
+      </label>
+      <input
+        type="number"
+        step="0.01"
+        value={newProductForm.pricingConfig?.compareAtMarginPercentage || ""}
+        onChange={(e) =>
+          setNewProductForm((prev) => ({
+            ...prev,
+            pricingConfig: {
+              ...prev.pricingConfig,
+              compareAtMarginPercentage: e.target.value,
+            },
+          }))
+        }
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        placeholder="0.00"
+      />
+    </div>
+  </div>
+
+  {/* Making Charges - Read Only */}
+  <div className="mt-4">
+    <label className="block text-sm font-medium text-gray-700 mb-2">
+      Making Charges (₹) - Auto Calculated
+    </label>
+    <input
+      type="number"
+      value={calculateMakingCharges().toFixed(2)}
+      readOnly
+      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600 cursor-not-allowed"
+      placeholder="0.00"
+    />
+    <p className="text-xs text-gray-500 mt-1">
+      Calculated based on metal type, purity, and weight range
+    </p>
+  </div>
+</div>
               </div>
             </div>
 
 
-            {(newProductForm.diamondConfig.length > 0 || newProductForm.stoneConfig.length > 0) && (
+            {/* {(newProductForm.metalConfig.type && newProductForm.metalConfig.netWeight && parseFloat(newProductForm.metalConfig.netWeight) > 0) || 
+ newProductForm.diamondConfig.length > 0 || 
+ newProductForm.stoneConfig.length > 0 ? (
   <div className="bg-gray-100 rounded-lg border border-gray-300 p-6 mt-6">
     <h4 className="text-lg font-semibold text-gray-800 mb-4">Price Summary</h4>
     <div className="space-y-2">
+      {newProductForm.metalConfig.type && newProductForm.metalConfig.netWeight && parseFloat(newProductForm.metalConfig.netWeight) > 0 && (
+        <div className="flex justify-between">
+          <span className="text-gray-600">
+            Metal Price ({newProductForm.metalConfig.type}
+            {newProductForm.metalConfig.type === 'Gold' && newProductForm.metalConfig.purity && (
+              <span> - {newProductForm.metalConfig.purity.toUpperCase()}</span>
+            )}):
+          </span>
+          <span className="font-medium">₹{calculateMetalPrice().toFixed(2)}</span>
+        </div>
+      )}
       {newProductForm.diamondConfig.length > 0 && (
         <div className="flex justify-between">
           <span className="text-gray-600">Total Diamond Price:</span>
@@ -6259,11 +6644,159 @@ const handleBulkDelete = async () => {
       <hr className="my-2" />
       <div className="flex justify-between text-lg font-bold">
         <span>Grand Total:</span>
-        <span>₹{(calculateTotalDiamondPrice() + calculateTotalStonePrice()).toFixed(2)}</span>
+        <span>₹{(
+          calculateMetalPrice() + 
+          calculateTotalDiamondPrice() + 
+          calculateTotalStonePrice()
+        ).toFixed(2)}</span>
       </div>
     </div>
   </div>
-)}
+) : null} */}
+
+
+{/* Calculate all values */}
+{(() => {
+  const metalCost = calculateMetalPrice();
+  const diamondPrice = calculateTotalDiamondPrice();
+  const stonePrice = calculateTotalStonePrice();
+  const makingCharges = calculateMakingCharges();
+  
+  const pricingConfig = newProductForm.pricingConfig || {};
+  const wastagePercentage = parseFloat(pricingConfig.wastagePercentage || 0);
+  const miscCharges = parseFloat(pricingConfig.miscCharges || 0);
+  const shippingChargesPercentage = parseFloat(pricingConfig.shippingChargesPercentage || 0);
+  const taxPercentage = parseFloat(pricingConfig.taxPercentage || 0);
+  const markupPercentage = parseFloat(pricingConfig.markupPercentage || 0);
+  const compareAtMarginPercentage = parseFloat(pricingConfig.compareAtMarginPercentage || 0);
+
+  const wastageCost = (metalCost * wastagePercentage) / 100;
+  const subtotal = metalCost + wastageCost + makingCharges + diamondPrice + stonePrice + miscCharges;
+  const shippingCharges = (subtotal * shippingChargesPercentage) / 100;
+  const markupAmount = ((subtotal + shippingCharges) * markupPercentage) / 100;
+  const taxAmount = ((subtotal + shippingCharges + markupAmount) * taxPercentage) / 100;
+  const finalPrice = subtotal + shippingCharges + markupAmount + taxAmount;
+  const comparePrice = finalPrice + (finalPrice * compareAtMarginPercentage) / 100;
+
+  // Only show if there's something to calculate
+  const hasAnyData = (
+    (newProductForm.metalConfig.type && newProductForm.metalConfig.netWeight && parseFloat(newProductForm.metalConfig.netWeight) > 0) || 
+    newProductForm.diamondConfig.length > 0 || 
+    newProductForm.stoneConfig.length > 0 ||
+    Object.values(pricingConfig).some(val => val && parseFloat(val) > 0)
+  );
+
+  if (!hasAnyData) return null;
+
+  return (
+    <div className="bg-gray-100 rounded-lg border border-gray-300 p-6 mt-6">
+      <h4 className="text-lg font-semibold text-gray-800 mb-4">Comprehensive Price Summary</h4>
+      
+      {/* Base Components */}
+      <div className="space-y-2 mb-4">
+        <h5 className="font-medium text-gray-700 mb-2">Base Components:</h5>
+        {metalCost > 0 && (
+          <div className="flex justify-between pl-4">
+            <span className="text-gray-600">
+              Metal Cost ({newProductForm.metalConfig.type}
+              {newProductForm.metalConfig.type === 'Gold' && newProductForm.metalConfig.purity && (
+                <span> - {newProductForm.metalConfig.purity.toUpperCase()}</span>
+              )}):
+            </span>
+            <span>₹{metalCost.toFixed(2)}</span>
+          </div>
+        )}
+        {wastageCost > 0 && (
+          <div className="flex justify-between pl-4">
+            <span className="text-gray-600">Wastage ({wastagePercentage}%):</span>
+            <span>₹{wastageCost.toFixed(2)}</span>
+          </div>
+        )}
+        {makingCharges > 0 && (
+          <div className="flex justify-between pl-4">
+            <span className="text-gray-600">Making Charges:</span>
+            <span>₹{makingCharges.toFixed(2)}</span>
+          </div>
+        )}
+        {diamondPrice > 0 && (
+          <div className="flex justify-between pl-4">
+            <span className="text-gray-600">Diamond Cost:</span>
+            <span>₹{diamondPrice.toFixed(2)}</span>
+          </div>
+        )}
+        {stonePrice > 0 && (
+          <div className="flex justify-between pl-4">
+            <span className="text-gray-600">Stone Cost:</span>
+            <span>₹{stonePrice.toFixed(2)}</span>
+          </div>
+        )}
+        {miscCharges > 0 && (
+          <div className="flex justify-between pl-4">
+            <span className="text-gray-600">Misc. Charges:</span>
+            <span>₹{miscCharges.toFixed(2)}</span>
+          </div>
+        )}
+      </div>
+
+      <hr className="my-3" />
+      
+      {/* Subtotal */}
+      <div className="flex justify-between font-medium text-gray-800 mb-3">
+        <span>Subtotal:</span>
+        <span>₹{subtotal.toFixed(2)}</span>
+      </div>
+
+      {/* Additional Charges */}
+      {(shippingCharges > 0 || markupAmount > 0 || taxAmount > 0) && (
+        <>
+          <div className="space-y-2 mb-4">
+            <h5 className="font-medium text-gray-700 mb-2">Additional Charges:</h5>
+            {shippingCharges > 0 && (
+              <div className="flex justify-between pl-4">
+                <span className="text-gray-600">Shipping ({shippingChargesPercentage}%):</span>
+                <span>₹{shippingCharges.toFixed(2)}</span>
+              </div>
+            )}
+            {markupAmount > 0 && (
+              <div className="flex justify-between pl-4">
+                <span className="text-gray-600">Markup ({markupPercentage}%):</span>
+                <span>₹{markupAmount.toFixed(2)}</span>
+              </div>
+            )}
+            {taxAmount > 0 && (
+              <div className="flex justify-between pl-4">
+                <span className="text-gray-600">Tax ({taxPercentage}%):</span>
+                <span>₹{taxAmount.toFixed(2)}</span>
+              </div>
+            )}
+          </div>
+          <hr className="my-3" />
+        </>
+      )}
+
+      {/* Final Prices */}
+      <div className="space-y-2">
+        <div className="flex justify-between text-lg font-bold text-green-700">
+          <span>Final Selling Price:</span>
+          <span>₹{finalPrice.toFixed(2)}</span>
+        </div>
+        {comparePrice > finalPrice && (
+          <div className="flex justify-between text-sm text-gray-600">
+            <span>Compare At Price ({compareAtMarginPercentage}% margin):</span>
+            <span>₹{comparePrice.toFixed(2)}</span>
+          </div>
+        )}
+      </div>
+      
+      {/* Price Breakdown Note */}
+      {/* <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+        <p className="text-xs text-blue-800">
+          <strong>Price Calculation:</strong> Base Components → Subtotal → + Shipping → + Markup → + Tax → Final Price
+        </p>
+      </div> */}
+    </div>
+  );
+})()}
 
             {/* Modal Footer */}
             <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex justify-end space-x-3">
