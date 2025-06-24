@@ -1094,6 +1094,8 @@ const Dashboard = ({ user, onLogout }) => {
 
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [selectAll, setSelectAll] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   const [showProductModal, setShowProductModal] = useState(false);
   const [currentProduct, setCurrentProduct] = useState(null);
@@ -1412,7 +1414,7 @@ const Dashboard = ({ user, onLogout }) => {
 
       const params = new URLSearchParams({
         page: page.toString(),
-        limit: "12",
+        limit: "25",
         ...(searchTerm && { search: searchTerm }),
         ...(selectedStatus && { status: selectedStatus }),
         ...(selectedVendor && { vendor: selectedVendor }),
@@ -1484,6 +1486,105 @@ const Dashboard = ({ user, onLogout }) => {
   };
 
   // **************PRODUCT HANDLERS************** //
+
+  
+const handleDeleteProduct = async (productId, productTitle) => {
+  const confirmDelete = window.confirm(
+    `Are you sure you want to delete "${productTitle}"?\n\nThis action cannot be undone and will remove the product from both your local database and Shopify store.`
+  );
+
+  if (!confirmDelete) return;
+
+  try {
+    setIsDeleting(true);
+    const token = localStorage.getItem("token");
+
+    const response = await axios.delete(
+      `http://localhost:5000/api/shopify/products/${productId}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+
+    if (response.data.success) {
+      alert(`Product "${productTitle}" deleted successfully!`);
+      
+      // Remove from selected products if it was selected
+      setSelectedProducts(prev => prev.filter(id => id !== productId));
+      
+      // Refresh the product list
+      await fetchShopifyProducts(pagination.current);
+      await fetchProductAnalytics();
+    }
+  } catch (error) {
+    console.error("Error deleting product:", error);
+    alert(
+      error.response?.data?.message || 
+      `Failed to delete product "${productTitle}". Please try again.`
+    );
+  } finally {
+    setIsDeleting(false);
+  }
+};
+
+// Bulk delete function
+const handleBulkDelete = async () => {
+  if (selectedProducts.length === 0) {
+    alert("Please select products to delete");
+    return;
+  }
+
+  const confirmDelete = window.confirm(
+    `Are you sure you want to delete ${selectedProducts.length} selected product(s)?\n\nThis action cannot be undone and will remove the products from both your local database and Shopify store.`
+  );
+
+  if (!confirmDelete) return;
+
+  try {
+    setIsBulkDeleting(true);
+    const token = localStorage.getItem("token");
+
+    const response = await axios.delete(
+      "http://localhost:5000/api/shopify/products",
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        data: { productIds: selectedProducts },
+      }
+    );
+
+    if (response.data.success) {
+      const { results } = response.data;
+      
+      let message = `Bulk deletion completed!\n\n`;
+      message += `✅ Successfully deleted: ${results.successful.length} products\n`;
+      
+      if (results.failed.length > 0) {
+        message += `❌ Failed to delete: ${results.failed.length} products\n\n`;
+        message += `Failed products:\n`;
+        results.failed.forEach(product => {
+          message += `• ${product.title}\n`;
+        });
+      }
+      
+      alert(message);
+      
+      // Clear selected products
+      setSelectedProducts([]);
+      
+      // Refresh the product list
+      await fetchShopifyProducts(pagination.current);
+      await fetchProductAnalytics();
+    }
+  } catch (error) {
+    console.error("Error in bulk delete:", error);
+    alert(
+      error.response?.data?.message || 
+      "Failed to delete selected products. Please try again."
+    );
+  } finally {
+    setIsBulkDeleting(false);
+  }
+};
 
   const handleProductView = (product) => {
     setCurrentProduct(product);
@@ -2820,85 +2921,104 @@ const Dashboard = ({ user, onLogout }) => {
 
   // ******************FUNCTION TO HANDLE ADDING A NEW PRODUCT****************** //
   const handleAddProduct = async () => {
-    if (!newProductForm.title.trim()) {
-      alert("Product title is required");
-      return;
+  if (!newProductForm.title.trim()) {
+    alert("Product title is required");
+    return;
+  }
+
+  try {
+    setIsAddingProduct(true);
+    const token = localStorage.getItem("token");
+
+    // Prepare form data for file uploads
+    const formData = new FormData();
+    formData.append("title", newProductForm.title);
+    formData.append("description", newProductForm.description);
+    formData.append("productType", newProductForm.productType);
+    formData.append("vendor", newProductForm.vendor);
+    formData.append("tags", newProductForm.tags);
+    formData.append("inventory", JSON.stringify(newProductForm.inventory));
+    formData.append("weight", JSON.stringify(newProductForm.weight));
+    formData.append("seo", JSON.stringify(newProductForm.seo));
+    formData.append(
+      "metalConfig",
+      JSON.stringify(newProductForm.metalConfig)
+    );
+    formData.append(
+      "diamondConfig",
+      JSON.stringify(newProductForm.diamondConfig)
+    );
+    formData.append(
+      "stoneConfig",
+      JSON.stringify(newProductForm.stoneConfig)
+    );
+
+    // Add media - separate files and URLs
+    const mediaUrls = [];
+    newProductForm.media.forEach((media, index) => {
+      if (media.file) {
+        formData.append("media", media.file);
+      } else if (media.url && media.url.trim()) {
+        mediaUrls.push({
+          url: media.url.trim(),
+          type: media.mediaType,
+        });
+      }
+    });
+
+    // Add media URLs as a JSON string
+    if (mediaUrls.length > 0) {
+      formData.append("mediaUrls", JSON.stringify(mediaUrls));
     }
 
-    try {
-      setIsAddingProduct(true);
-      const token = localStorage.getItem("token");
+    console.log("Sending product data to backend...");
 
-      // Prepare form data for file uploads
-      const formData = new FormData();
-      formData.append("title", newProductForm.title);
-      formData.append("description", newProductForm.description);
-      formData.append("productType", newProductForm.productType);
-      formData.append("vendor", newProductForm.vendor);
-      formData.append("tags", newProductForm.tags);
-      formData.append("inventory", JSON.stringify(newProductForm.inventory));
-      formData.append("weight", JSON.stringify(newProductForm.weight));
-      formData.append("seo", JSON.stringify(newProductForm.seo));
-      formData.append(
-        "metalConfig",
-        JSON.stringify(newProductForm.metalConfig)
-      );
-      formData.append(
-        "diamondConfig",
-        JSON.stringify(newProductForm.diamondConfig)
-      );
-      formData.append(
-        "stoneConfig",
-        JSON.stringify(newProductForm.stoneConfig)
-      );
-
-      // Add media - separate files and URLs
-      const mediaUrls = [];
-      newProductForm.media.forEach((media, index) => {
-        if (media.file) {
-          formData.append("media", media.file);
-        } else if (media.url && media.url.trim()) {
-          mediaUrls.push({
-            url: media.url.trim(),
-            type: media.mediaType,
-          });
-        }
-      });
-
-      // Add media URLs as a JSON string
-      if (mediaUrls.length > 0) {
-        formData.append("mediaUrls", JSON.stringify(mediaUrls));
+    const response = await axios.post(
+      "http://localhost:5000/api/shopify/add-product",
+      formData,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "multipart/form-data",
+        },
       }
+    );
 
-      console.log("Sending product data to backend...");
-
-      const response = await axios.post(
-        "http://localhost:5000/api/shopify/add-product",
-        formData,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
-
-      if (response.data.success) {
-        alert("Product added successfully to Shopify!");
-        setShowAddProductModal(false);
-        resetNewProductForm();
-        // Refresh products list
-        await fetchShopifyProducts();
-        await fetchProductAnalytics();
+    if (response.data.success) {
+      alert("Product added successfully to Shopify!");
+      setShowAddProductModal(false);
+      resetNewProductForm();
+      
+      // Sync products from Shopify to get the latest data including the newly created product
+      console.log("Syncing products from Shopify...");
+      try {
+        // Call the same sync function that the sync button uses
+        await syncShopifyProducts(false); // false for incremental sync, true for full sync
+      } catch (syncError) {
+        console.error("Error syncing products after creation:", syncError);
+        // Even if sync fails, show a message but don't fail the whole operation
+        alert("Product created successfully, but failed to sync product list. Please click the sync button manually.");
       }
-    } catch (error) {
-      console.error("Error adding product:", error);
-      console.error("Error details:", error.response?.data);
-      alert(error.response?.data?.message || "Failed to add product");
-    } finally {
-      setIsAddingProduct(false);
     }
-  };
+  } catch (error) {
+    console.error("Error adding product:", error);
+    console.error("Error details:", error.response?.data);
+    
+    // Show more specific error messages
+    let errorMessage = "Failed to add product";
+    if (error.response?.data?.message) {
+      errorMessage = error.response.data.message;
+    } else if (error.message.includes("Only image and video files are allowed")) {
+      errorMessage = "Please upload only image (JPEG, PNG, GIF, WebP) or video (MP4, WebM, OGG, MOV, AVI) files";
+    }
+    
+    alert(errorMessage);
+  } finally {
+    setIsAddingProduct(false);
+  }
+};
+
+
 
   const handleTitleChange = (e) => {
     const newTitle = e.target.value;
@@ -3102,17 +3222,6 @@ const Dashboard = ({ user, onLogout }) => {
           <div className="flex flex-wrap gap-3">
             {isShopifyConfigured && (
               <>
-                {/* <button
-                  onClick={() => syncShopifyProducts(false)}
-                  disabled={isSyncing}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <RefreshCw
-                    size={16}
-                    className={isSyncing ? "animate-spin" : ""}
-                  />
-                  {isSyncing ? "Syncing..." : "Quick Sync"}
-                </button> */}
                 <button
                   onClick={() => syncShopifyProducts(true)}
                   disabled={isSyncing}
@@ -3126,6 +3235,8 @@ const Dashboard = ({ user, onLogout }) => {
                 </button>
               </>
             )}
+
+            
 
             <button
               onClick={() => setShowAddProductModal(true)}
@@ -3218,27 +3329,27 @@ const Dashboard = ({ user, onLogout }) => {
                 {selectedProducts.length > 1 ? "s" : ""} selected
               </span>
               <div className="flex gap-2">
-                <button
-                  onClick={() => bulkUpdateProducts({ status: "active" })}
-                  disabled={isLoading}
-                  className="px-3 py-1 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white text-sm rounded transition-colors"
-                >
-                  Activate
-                </button>
-                <button
-                  onClick={() => bulkUpdateProducts({ status: "draft" })}
-                  disabled={isLoading}
-                  className="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 disabled:bg-yellow-300 text-white text-sm rounded transition-colors"
-                >
-                  Draft
-                </button>
-                <button
-                  onClick={() => bulkUpdateProducts({ status: "archived" })}
-                  disabled={isLoading}
-                  className="px-3 py-1 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-300 text-white text-sm rounded transition-colors"
-                >
-                  Archive
-                </button>
+                {selectedProducts.length > 0 && (
+    <button
+      onClick={handleBulkDelete}
+      disabled={isBulkDeleting}
+      className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center space-x-2"
+    >
+      {isBulkDeleting ? (
+        <>
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+          <span>Deleting...</span>
+        </>
+      ) : (
+        <>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+          <span>Delete Selected ({selectedProducts.length})</span>
+        </>
+      )}
+    </button>
+  )}
               </div>
             </div>
           </div>
@@ -3504,13 +3615,13 @@ const Dashboard = ({ user, onLogout }) => {
                         {/* Actions */}
                         <td className="px-6 py-4 text-right text-sm font-medium">
                           <div className="flex items-center space-x-2">
-                            <button
+                            {/* <button
                               onClick={() => handleProductView(product)}
                               className="inline-flex items-center px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
                             >
                               <Eye size={14} className="mr-1" />
                               View
-                            </button>
+                            </button> */}
                             <button
                               onClick={() => handleProductEdit(product)}
                               className="inline-flex items-center px-3 py-1 border border-blue-300 rounded-md text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors"
@@ -3518,6 +3629,20 @@ const Dashboard = ({ user, onLogout }) => {
                               <Edit size={14} className="mr-1" />
                               Edit
                             </button>
+                            <button
+        onClick={() => handleDeleteProduct(product._id, product.title)}
+        disabled={isDeleting}
+        className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+        title="Delete Product"
+      >
+        {isDeleting ? (
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600"></div>
+        ) : (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        )}
+      </button>
                           </div>
                         </td>
                       </tr>
