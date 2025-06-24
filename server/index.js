@@ -2421,16 +2421,22 @@ app.post(
       let calculatedPrice = 0;
       
       if (diamondConfigData && diamondConfigData.length > 0) {
-        diamondConfigData.forEach(diamond => {
-          calculatedPrice += diamond.diamondValue || 0;
-        });
-      }
+  diamondConfigData.forEach(diamond => {
+    const diamondValue = parseFloat(diamond.diamondValue) || 0;
+    calculatedPrice += diamondValue;
+  });
+}
 
-      if (stoneConfigData && stoneConfigData.length > 0) {
-        stoneConfigData.forEach(stone => {
-          calculatedPrice += stone.stoneValue || 0;
-        });
-      }
+if (stoneConfigData && stoneConfigData.length > 0) {
+  stoneConfigData.forEach(stone => {
+    const stoneValue = parseFloat(stone.stoneValue) || 0;
+    calculatedPrice += stoneValue;
+  });
+}
+
+calculatedPrice = isNaN(calculatedPrice) ? 0 : calculatedPrice;
+
+console.log("Calculated price:", calculatedPrice, "Type:", typeof calculatedPrice);
 
       // Create product using Shopify REST API
       const productData = {
